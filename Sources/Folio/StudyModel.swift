@@ -33,6 +33,8 @@ final class StudyModel {
     @ObservationIgnored private var saveTask: Task<Void, Never>?
     @ObservationIgnored private var tasks: [StudyTab: Task<Void, Never>] = [:]
     @ObservationIgnored private var dirty = false
+    /// Card and attempt ids as of the last load or save, used to tell what another device changed since.
+    @ObservationIgnored private var known = LearnData.Known()
 
     init(bookID: String, title: String, author: String) {
         switch CloudStore.readSynced(LearnData.self, at: CloudStore.learnURL(bookID)) {
@@ -46,6 +48,7 @@ final class StudyModel {
         }
         data.title = title
         data.author = author
+        known = data.knownIDs
     }
 
     // MARK: Derived
@@ -243,12 +246,18 @@ final class StudyModel {
         case .unreadable:
             break
         }
+        if !dirty { known = data.knownIDs }
     }
 
     func flush() {
         saveTask?.cancel()
         guard dirty, !saveBlocked else { return }
         dirty = false
+        // Fold in what another device saved since this one last looked, instead of writing over it.
+        if case .value(let disk) = CloudStore.readSynced(LearnData.self, at: CloudStore.learnURL(data.bookID)) {
+            data.absorb(disk, known: known)
+        }
+        known = data.knownIDs
         CloudStore.write(data, to: CloudStore.learnURL(data.bookID))
     }
 }

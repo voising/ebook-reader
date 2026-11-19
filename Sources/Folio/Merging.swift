@@ -70,3 +70,44 @@ extension WordFile: CloudMergeable {
         words.sort { $0.addedAt > $1.addedAt }
     }
 }
+
+// MARK: - Saving without undoing another device
+
+extension LearnData {
+    /// The ids this device knew about at its last load or save.
+    struct Known {
+        var cards: Set<String> = []
+        var attempts: Set<String> = []
+    }
+
+    var knownIDs: Known {
+        Known(cards: Set((cards ?? []).map(\.id)), attempts: Set((attempts ?? []).map(\.id)))
+    }
+
+    /// Takes in what `disk` gained or lost since `known` was recorded, keeping everything made here.
+    mutating func absorb(_ disk: LearnData, known: Known) {
+        let diskCards = Dictionary((disk.cards ?? []).map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        var mine = (cards ?? []).filter { diskCards[$0.id] != nil || !known.cards.contains($0.id) }
+        for i in mine.indices {
+            // A card reviewed more recently on the other device keeps that schedule.
+            if let theirs = diskCards[mine[i].id], (theirs.lastReviewed ?? .distantPast) > (mine[i].lastReviewed ?? .distantPast) {
+                mine[i] = theirs
+            }
+        }
+        let mineIDs = Set((cards ?? []).map(\.id))
+        mine += (disk.cards ?? []).filter { !mineIDs.contains($0.id) && !known.cards.contains($0.id) }
+        if cards != nil || !mine.isEmpty { cards = mine }
+
+        let diskAttempts = Set((disk.attempts ?? []).map(\.id)), mineAttempts = Set((attempts ?? []).map(\.id))
+        var kept = (attempts ?? []).filter { diskAttempts.contains($0.id) || !known.attempts.contains($0.id) }
+        kept += (disk.attempts ?? []).filter { !mineAttempts.contains($0.id) && !known.attempts.contains($0.id) }
+        if attempts != nil || !kept.isEmpty { attempts = kept.sorted { $0.date < $1.date } }
+
+        let seen = Set((reviews ?? []).map { "\($0.cardID)|\($0.date.timeIntervalSince1970)" })
+        let newReviews = (disk.reviews ?? []).filter { !seen.contains("\($0.cardID)|\($0.date.timeIntervalSince1970)") }
+        if !newReviews.isEmpty { reviews = ((reviews ?? []) + newReviews).sorted { $0.date < $1.date } }
+
+        if let theirs = disk.maps { maps = (maps ?? [:]).merging(theirs) { here, _ in here } }
+        if let theirs = disk.primers { primers = (primers ?? [:]).merging(theirs) { here, _ in here } }
+    }
+}

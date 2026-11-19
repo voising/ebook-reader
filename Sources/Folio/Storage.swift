@@ -105,6 +105,8 @@ enum CloudStore {
     }
 
     static func read<T: Decodable>(_ type: T.Type, at url: URL) -> ReadResult<T> {
+        // Let this device's own queued saves land first, so a read never sees an older copy than we wrote.
+        writer.sync {}
         let fm = FileManager.default
         try? fm.startDownloadingUbiquitousItem(at: url)
         if !fm.fileExists(atPath: url.path) {
@@ -125,13 +127,16 @@ enum CloudStore {
         let result = read(type, at: url)
         guard case .value(var value) = result,
               let conflicts = NSFileVersion.unresolvedConflictVersionsOfItem(at: url), !conflicts.isEmpty else { return result }
+        var merged = false
         for version in conflicts {
-            if let data = try? Data(contentsOf: version.url), let other = try? decoder.decode(T.self, from: data) {
-                value.merge(other)
-            }
+            // A version that can't be read yet stays unresolved, to be folded in on a later read.
+            guard let data = try? Data(contentsOf: version.url), let other = try? decoder.decode(T.self, from: data) else { continue }
+            value.merge(other)
             version.isResolved = true
+            try? version.remove()
+            merged = true
         }
-        try? NSFileVersion.removeOtherVersionsOfItem(at: url)
+        guard merged else { return result }
         write(value, to: url)
         return .value(value)
     }
@@ -165,7 +170,12 @@ enum CloudStore {
         let ext = url.pathExtension.lowercased()
         guard ext == "epub" || ext == "pdf" else { throw BookError.unsupported }
         let dest = filesDir.appendingPathComponent("\(try BookIdentity.id(for: url)).\(ext)")
-        if !isPresent(dest) { try FileManager.default.copyItem(at: url, to: dest) }
+        if !isPresent(dest) {
+            do { try FileManager.default.copyItem(at: url, to: dest) } catch {
+                // Fine if something else (the first-run migration, another window) put it there meanwhile.
+                guard isPresent(dest) else { throw error }
+            }
+        }
         return dest
     }
 
@@ -322,8 +332,9 @@ extension LibraryStore {
     /// Brings this device's shelf in line with the managed book folder: adds books that arrived from
     /// another device, drops ones that were removed there, and refreshes progress.
     static func reconcile(_ items: [LibraryItem], open: String?) -> [LibraryItem] {
-        guard let filesDir = CloudStore.filesDir else { return items }
-        let names = (try? FileManager.default.contentsOfDirectory(atPath: filesDir.path)) ?? []
+        // If the folder can't be listed right now, leave the shelf alone rather than treat it as empty.
+        guard let filesDir = CloudStore.filesDir,
+              let names = try? FileManager.default.contentsOfDirectory(atPath: filesDir.path) else { return items }
         var files: [String: (name: String, kind: BookKind)] = [:]
         for raw in names {
             // Not-yet-downloaded files can appear as ".<name>.icloud".

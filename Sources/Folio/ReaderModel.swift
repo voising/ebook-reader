@@ -101,6 +101,8 @@ final class ReaderModel {
     @ObservationIgnored weak var pdfView: FolioPDFView?
     @ObservationIgnored private var saveTask: Task<Void, Never>?
     @ObservationIgnored var onProgress: ((String, Double) -> Void)?
+    /// Highlight ids as of the last load or save, used to tell what another device added or removed since.
+    @ObservationIgnored private var syncedHighlightIDs: Set<String> = []
 
     enum SidebarTab: String, CaseIterable { case contents = "Contents", highlights = "Highlights", notes = "Notes", search = "Search" }
 
@@ -127,6 +129,7 @@ final class ReaderModel {
             saveBlocked = true
         }
 
+        syncedHighlightIDs = Set(record.highlights.map(\.id))
         if let pos = record.position {
             if let epub, let c = pos.chapter, epub.spine.indices.contains(c) {
                 chapterIndex = c
@@ -374,6 +377,12 @@ final class ReaderModel {
             guard let disk = CloudStore.load(bookID), disk.updatedAt > record.updatedAt.addingTimeInterval(1) else { return }
             record = disk
         }
+        syncedHighlightIDs = Set(record.highlights.map(\.id))
+        refreshHighlights()
+    }
+
+    /// Redraws the highlights after they changed underneath the page.
+    private func refreshHighlights() {
         if kind == .pdf {
             pdfView?.reinstallAnnotations(record.highlights)
         } else {
@@ -381,6 +390,28 @@ final class ReaderModel {
             pendingAnchor = .fraction(chapterFraction)
             webView?.reload()
         }
+    }
+
+    /// Saves the record without undoing what another device saved since this one last looked: highlights
+    /// added there are taken in, ones removed there are dropped, and everything made here is kept.
+    private func writeRecord() {
+        guard !saveBlocked else { return }
+        if case .value(let disk) = CloudStore.loadResult(bookID) {
+            let onDisk = Set(disk.highlights.map(\.id)), mine = Set(record.highlights.map(\.id))
+            let removedElsewhere = syncedHighlightIDs.subtracting(onDisk).intersection(mine)
+            let addedElsewhere = disk.highlights.filter { !mine.contains($0.id) && !syncedHighlightIDs.contains($0.id) }
+            if !removedElsewhere.isEmpty || !addedElsewhere.isEmpty {
+                record.highlights.removeAll { removedElsewhere.contains($0.id) }
+                record.highlights += addedElsewhere
+                refreshHighlights()
+            }
+            if (disk.noteUpdatedAt ?? .distantPast) > (record.noteUpdatedAt ?? .distantPast) {
+                record.note = disk.note
+                record.noteUpdatedAt = disk.noteUpdatedAt
+            }
+        }
+        syncedHighlightIDs = Set(record.highlights.map(\.id))
+        CloudStore.save(record)
     }
 
     // MARK: - Chat context
@@ -436,7 +467,7 @@ final class ReaderModel {
         saveTask = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(600))
             guard !Task.isCancelled, let self else { return }
-            CloudStore.save(self.record)
+            self.writeRecord()
         }
     }
 
@@ -448,7 +479,7 @@ final class ReaderModel {
 
     func flush() {
         saveTask?.cancel()
-        if !saveBlocked { CloudStore.save(record) }
+        writeRecord()
         study.flush()
     }
 

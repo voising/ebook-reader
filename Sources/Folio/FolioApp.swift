@@ -133,7 +133,9 @@ enum ZoomStep { case `in`, out, reset }
 extension AppModel {
     /// PDFs scale the page; everything else scales the reading text.
     func zoom(_ step: ZoomStep) {
-        if let reader, reader.kind == .pdf, let pdf = reader.pdfView {
+        if let reader, reader.kind == .pdf {
+            // A PDF never falls through to the text-size setting below, which it wouldn't show.
+            guard let pdf = reader.pdfView else { return }
             switch step {
             case .in: pdf.zoomIn(nil)
             case .out: pdf.zoomOut(nil)

@@ -29,6 +29,8 @@ struct EPUBReaderView: PlatformViewRepresentable {
 
     func updateView(_ webView: WKWebView, context: Context) {
         let c = context.coordinator
+        // Keep the reader pointed at the web view that is actually on screen (see FolioPDFView.claimReader).
+        if webView.window != nil, reader.webView !== webView { reader.webView = webView }
         if c.theme != theme {
             c.theme = theme
             c.installScripts(on: webView.configuration.userContentController)

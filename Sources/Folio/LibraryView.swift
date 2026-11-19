@@ -46,6 +46,7 @@ struct HubView: View {
 struct LibraryView: View {
     @Environment(AppModel.self) private var app
     @State private var dropTargeted = false
+    @State private var removing: LibraryItem?
 
     private let columns = [GridItem(.adaptive(minimum: 150, maximum: 190), spacing: 32, alignment: .top)]
 
@@ -89,7 +90,10 @@ struct LibraryView: View {
                                     Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([item.url]) }
                                     #endif
                                     Divider()
-                                    Button("Remove from Library", role: .destructive) { app.remove(item) }
+                                    Button("Remove from Library", role: .destructive) {
+                                        // A managed book is deleted on every device, so that one asks first.
+                                        if CloudStore.filesDir != nil { removing = item } else { app.remove(item) }
+                                    }
                                 }
                         }
                     }
@@ -115,6 +119,17 @@ struct LibraryView: View {
         }
         .onDrop(of: [.fileURL], isTargeted: $dropTargeted) { providers in
             app.handleDrop(providers)
+        }
+        .confirmationDialog("Remove “\(removing?.title ?? "")” from your library?",
+                            isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }),
+                            titleVisibility: .visible) {
+            Button("Remove from All Devices", role: .destructive) {
+                if let item = removing { app.remove(item) }
+                removing = nil
+            }
+            Button("Cancel", role: .cancel) { removing = nil }
+        } message: {
+            Text("The book's file is deleted from iCloud on all your devices. Your highlights, notes and study data are kept.")
         }
     }
 

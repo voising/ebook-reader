@@ -42,8 +42,6 @@ final class WordStore {
     /// `-wordsFile <path>` on the command line points the list at another file.
     @ObservationIgnored private let url = UserDefaults.standard.string(forKey: "wordsFile").map { URL(fileURLWithPath: $0) }
         ?? CloudStore.learnDir.appendingPathComponent("_words.json")
-    @ObservationIgnored private let writer = DispatchQueue(label: "folio.words-write")
-    @ObservationIgnored private var pendingWrites = 0
     @ObservationIgnored private var fillTask: Task<Void, Never>?
     @ObservationIgnored private var fillTimer: Task<Void, Never>?
     @ObservationIgnored private var lastAddedID: String?
@@ -53,9 +51,9 @@ final class WordStore {
 
     // MARK: Storage
 
-    /// Picks up changes synced from another Mac. Skipped while this Mac still has changes on the way to disk.
+    /// Re-reads the list, picking up what another device saved. Every change here is saved at once and
+    /// reads wait for those saves, so this never drops something made on this device.
     func reload() {
-        guard pendingWrites == 0, fillTask == nil else { return }
         switch CloudStore.readSynced(WordFile.self, at: url) {
         case .value(let file): words = file.words; readOnly = false
         case .missing: readOnly = false
@@ -65,20 +63,7 @@ final class WordStore {
 
     private func save() {
         guard !readOnly else { return }
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        encoder.dateEncodingStrategy = .iso8601
-        guard let data = try? encoder.encode(WordFile(words: words)) else { return }
-        let url = url
-        pendingWrites += 1
-        // One serial queue, so two quick saves always land in order.
-        writer.async {
-            var error: NSError?
-            NSFileCoordinator().coordinate(writingItemAt: url, options: .forReplacing, error: &error) { writeURL in
-                try? data.write(to: writeURL, options: .atomic)
-            }
-            DispatchQueue.main.async { MainActor.assumeIsolated { self.pendingWrites -= 1 } }
-        }
+        CloudStore.write(WordFile(words: words), to: url)
     }
 
     // MARK: Adding and removing
@@ -159,6 +144,8 @@ final class WordStore {
                 } catch {
                     failure = error.localizedDescription
                 }
+                // The list may have changed on another device while Claude was working.
+                self.reload()
                 guard let i = self.words.firstIndex(where: { $0.id == next.id }) else { continue }
                 if let definition = entry?.definition?.collapsed.nilIfEmpty {
                     self.words[i].definition = definition

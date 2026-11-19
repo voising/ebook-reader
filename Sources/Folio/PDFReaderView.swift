@@ -26,6 +26,7 @@ struct PDFReaderView: PlatformViewRepresentable {
     }
 
     func updateView(_ view: FolioPDFView, context: Context) {
+        view.claimReader()
         if view.backgroundColor != theme.theme.background {
             view.backgroundColor = theme.theme.background
         }
@@ -57,6 +58,24 @@ final class FolioPDFView: PDFView {
     }
 
     required init?(coder: NSCoder) { fatalError() }
+
+    /// The reader finds this view through a weak reference. SwiftUI can build a second copy of the view and
+    /// throw it away, which would leave that reference empty, so the view on screen re-registers itself.
+    func claimReader() {
+        if window != nil, reader?.pdfView !== self { reader?.pdfView = self }
+    }
+
+    #if os(macOS)
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        claimReader()
+    }
+    #else
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        claimReader()
+    }
+    #endif
 
     func startTrackingPages() {
         NotificationCenter.default.addObserver(self, selector: #selector(pageChanged), name: .PDFViewPageChanged, object: self)
