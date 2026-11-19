@@ -116,7 +116,7 @@ final class ReaderModel {
         chat = ChatModel(scope: .book(title: book.title, author: book.author))
         search = BookSearch(epub: book.epub, pdf: book.pdf)
         study = StudyModel(bookID: book.bookID, title: book.title, author: book.author)
-        videoID = YouTube.videoID(forImported: book.url)
+        videoID = YouTube.videoID(forImported: book.epub)
         switch CloudStore.loadResult(book.bookID) {
         case .value(let saved):
             record = saved
@@ -438,6 +438,12 @@ final class ReaderModel {
             guard !Task.isCancelled, let self else { return }
             CloudStore.save(self.record)
         }
+    }
+
+    /// Writes the record as soon as a book is opened, so other devices learn its title and can list it.
+    func announce() {
+        guard !saveBlocked, case .missing = CloudStore.loadResult(bookID) else { return }
+        CloudStore.save(record)
     }
 
     func flush() {

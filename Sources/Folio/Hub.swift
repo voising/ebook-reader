@@ -34,14 +34,14 @@ final class StudyHub {
     func reload() {
         let files = (try? FileManager.default.contentsOfDirectory(at: CloudStore.learnDir, includingPropertiesForKeys: nil)) ?? []
         books = files.filter { $0.pathExtension == "json" && !$0.lastPathComponent.hasPrefix("_") }.compactMap { url in
-            if case .value(let data) = CloudStore.read(LearnData.self, at: url) { return data }
+            if case .value(let data) = CloudStore.readSynced(LearnData.self, at: url) { return data }
             return nil
         }
         .sorted { ($0.title ?? "") < ($1.title ?? "") }
 
         if !libraryLoaded {
             libraryLoaded = true
-            switch CloudStore.read(LibraryLearnData.self, at: CloudStore.libraryLearnURL) {
+            switch CloudStore.readSynced(LibraryLearnData.self, at: CloudStore.libraryLearnURL) {
             case .value(let saved):
                 library = saved
                 chat.restore(saved.chat)
@@ -78,7 +78,7 @@ final class StudyHub {
     func grade(_ item: ReviewItem, _ grade: ReviewGrade) {
         guard let i = books.firstIndex(where: { $0.bookID == item.bookID }) else { return }
         // Re-read first so a review never writes over changes made elsewhere since the hub loaded.
-        if case .value(let fresh) = CloudStore.read(LearnData.self, at: CloudStore.learnURL(item.bookID)) { books[i] = fresh }
+        if case .value(let fresh) = CloudStore.readSynced(LearnData.self, at: CloudStore.learnURL(item.bookID)) { books[i] = fresh }
         guard books[i].grade(item.card.id, grade) != nil else { return }
         CloudStore.write(books[i], to: CloudStore.learnURL(item.bookID))
     }

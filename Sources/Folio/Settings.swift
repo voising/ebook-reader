@@ -10,27 +10,27 @@ enum ReaderTheme: String, CaseIterable, Identifiable {
         self == .auto ? (scheme == .dark ? .night : .paper) : self
     }
 
-    var background: NSColor {
+    var background: PlatformColor {
         switch self {
-        case .auto, .paper: NSColor(srgbRed: 0.988, green: 0.982, blue: 0.968, alpha: 1)
-        case .sepia: NSColor(srgbRed: 0.957, green: 0.925, blue: 0.851, alpha: 1)
-        case .night: NSColor(srgbRed: 0.110, green: 0.106, blue: 0.102, alpha: 1)
+        case .auto, .paper: PlatformColor(srgbRed: 0.988, green: 0.982, blue: 0.968, alpha: 1)
+        case .sepia: PlatformColor(srgbRed: 0.957, green: 0.925, blue: 0.851, alpha: 1)
+        case .night: PlatformColor(srgbRed: 0.110, green: 0.106, blue: 0.102, alpha: 1)
         }
     }
 
-    var foreground: NSColor {
+    var foreground: PlatformColor {
         switch self {
-        case .auto, .paper: NSColor(srgbRed: 0.12, green: 0.11, blue: 0.10, alpha: 1)
-        case .sepia: NSColor(srgbRed: 0.24, green: 0.19, blue: 0.13, alpha: 1)
-        case .night: NSColor(srgbRed: 0.85, green: 0.83, blue: 0.79, alpha: 1)
+        case .auto, .paper: PlatformColor(srgbRed: 0.12, green: 0.11, blue: 0.10, alpha: 1)
+        case .sepia: PlatformColor(srgbRed: 0.24, green: 0.19, blue: 0.13, alpha: 1)
+        case .night: PlatformColor(srgbRed: 0.85, green: 0.83, blue: 0.79, alpha: 1)
         }
     }
 
-    var link: NSColor {
+    var link: PlatformColor {
         switch self {
-        case .auto, .paper: NSColor(srgbRed: 0.55, green: 0.33, blue: 0.16, alpha: 1)
-        case .sepia: NSColor(srgbRed: 0.55, green: 0.28, blue: 0.10, alpha: 1)
-        case .night: NSColor(srgbRed: 0.90, green: 0.66, blue: 0.42, alpha: 1)
+        case .auto, .paper: PlatformColor(srgbRed: 0.55, green: 0.33, blue: 0.16, alpha: 1)
+        case .sepia: PlatformColor(srgbRed: 0.55, green: 0.28, blue: 0.10, alpha: 1)
+        case .night: PlatformColor(srgbRed: 0.90, green: 0.66, blue: 0.42, alpha: 1)
         }
     }
 
@@ -102,11 +102,4 @@ final class ReaderSettings {
 struct ThemeSnapshot: Equatable {
     let vars: [String: String]
     let theme: ReaderTheme
-}
-
-extension NSColor {
-    var hex: String {
-        let c = usingColorSpace(.sRGB) ?? self
-        return String(format: "#%02X%02X%02X", Int(c.redComponent * 255), Int(c.greenComponent * 255), Int(c.blueComponent * 255))
-    }
 }

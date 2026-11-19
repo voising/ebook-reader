@@ -21,7 +21,7 @@ struct VocabWord: Codable, Identifiable, Hashable {
     var error: String?
 }
 
-private struct WordFile: Codable {
+struct WordFile: Codable {
     var words: [VocabWord]
 }
 
@@ -56,7 +56,7 @@ final class WordStore {
     /// Picks up changes synced from another Mac. Skipped while this Mac still has changes on the way to disk.
     func reload() {
         guard pendingWrites == 0, fillTask == nil else { return }
-        switch CloudStore.read(WordFile.self, at: url) {
+        switch CloudStore.readSynced(WordFile.self, at: url) {
         case .value(let file): words = file.words; readOnly = false
         case .missing: readOnly = false
         case .unreadable: readOnly = true
@@ -99,6 +99,7 @@ final class WordStore {
     /// Saves a word once (case-insensitively). Returns the cleaned word, or nil if there was nothing to save.
     @discardableResult
     func add(_ raw: String, context: String?, bookID: String?, source: String?) -> String? {
+        reload()
         guard !readOnly, let word = Self.clean(raw) else { return nil }
         lastAddedID = nil
         if words.contains(where: { $0.word.caseInsensitiveCompare(word) == .orderedSame }) { return word }
@@ -120,6 +121,7 @@ final class WordStore {
     }
 
     func remove(_ id: String) {
+        reload()
         guard !readOnly else { return }
         words.removeAll { $0.id == id }
         if lastAddedID == id { lastAddedID = nil }
@@ -325,8 +327,7 @@ private struct WordCard: View {
         .contextMenu {
             Button("Hear It", action: onSpeak)
             Button("Copy Word") {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(word.word, forType: .string)
+                Platform.copy(word.word)
             }
             Divider()
             Button("Remove from Words", role: .destructive, action: onRemove)

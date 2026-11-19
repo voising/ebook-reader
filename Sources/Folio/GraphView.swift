@@ -220,7 +220,7 @@ struct GraphView: View {
             .frame(width: size.width, height: size.height)
             .background(
                 RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .fill(Color(nsColor: .textBackgroundColor))
+                    .fill(Color(platform: .textBackgroundColor))
                     .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(node.color.opacity(selected ? 0.34 : 0.18)))
             )
             .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous)
@@ -264,7 +264,7 @@ struct GraphView: View {
         let mid = CGPoint(x: (p1.x + tip.x) / 2, y: (p1.y + tip.y) / 2)
         let box = CGRect(x: mid.x - measured.width / 2 - 4, y: mid.y - measured.height / 2 - 1.5,
                          width: measured.width + 8, height: measured.height + 3)
-        ctx.fill(Path(roundedRect: box, cornerRadius: 4), with: .color(Color(nsColor: .windowBackgroundColor).opacity(0.92)))
+        ctx.fill(Path(roundedRect: box, cornerRadius: 4), with: .color(Color(platform: .windowBackgroundColor).opacity(0.92)))
         ctx.draw(text, in: CGRect(x: mid.x - measured.width / 2, y: mid.y - measured.height / 2, width: measured.width, height: measured.height))
     }
 }

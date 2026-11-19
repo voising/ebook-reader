@@ -33,7 +33,7 @@ struct ReaderView: View {
                 .animation(.easeOut(duration: 0.15), value: reader.study.tab != nil)
                 footer
             }
-            .background(Color(nsColor: theme.theme.background))
+            .background(Color(platform: theme.theme.background))
             .inspector(isPresented: $reader.showChat) {
                 ChatView(chat: reader.chat, chrome: .reader(reader))
                     .inspectorColumnWidth(min: 300, ideal: 370, max: 560)
@@ -42,10 +42,10 @@ struct ReaderView: View {
         .navigationTitle(reader.title)
         .navigationSubtitle(reader.currentChapterTitle)
         .toolbar { toolbar }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: Platform.didBecomeActive)) { _ in
             reader.reloadFromCloud()
         }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: Platform.willStop)) { _ in
             reader.flush()
         }
         .onDisappear { reader.flush() }
@@ -65,8 +65,8 @@ struct ReaderView: View {
             Text(reader.positionLabel)
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
-                    Capsule().fill(Color(nsColor: theme.theme.foreground).opacity(0.1))
-                    Capsule().fill(Color(nsColor: theme.theme.link).opacity(0.7))
+                    Capsule().fill(Color(platform: theme.theme.foreground).opacity(0.1))
+                    Capsule().fill(Color(platform: theme.theme.link).opacity(0.7))
                         .frame(width: max(3, geo.size.width * reader.progress))
                 }
             }
@@ -79,7 +79,7 @@ struct ReaderView: View {
             }
         }
         .font(.system(size: 10.5, weight: .medium))
-        .foregroundStyle(Color(nsColor: theme.theme.foreground).opacity(0.45))
+        .foregroundStyle(Color(platform: theme.theme.foreground).opacity(0.45))
         .padding(.horizontal, 18)
         .frame(height: 28)
         .animation(.easeOut(duration: 0.3), value: reader.progress)
@@ -227,8 +227,7 @@ struct SidebarView: View {
                                 Button("Add to Note") { reader.appendToNote(h) }
                                 Button("Make Flashcard") { reader.makeCard(from: h) }
                                 Button("Copy") {
-                                    NSPasteboard.general.clearContents()
-                                    NSPasteboard.general.setString(h.text, forType: .string)
+                                    Platform.copy(h.text)
                                 }
                                 Menu("Color") {
                                     ForEach(HighlightColor.allCases) { c in
@@ -249,8 +248,7 @@ struct SidebarView: View {
                         .foregroundStyle(.secondary)
                     Spacer()
                     Button(copied ? "Copied" : "Copy as Markdown") {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(reader.markdownExport(), forType: .string)
+                        Platform.copy(reader.markdownExport())
                         copied = true
                         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { copied = false }
                     }
@@ -343,13 +341,13 @@ struct AppearancePopover: View {
                         VStack(spacing: 6) {
                             ZStack {
                                 if t == .auto {
-                                    Circle().fill(LinearGradient(colors: [Color(nsColor: ReaderTheme.paper.background), Color(nsColor: ReaderTheme.night.background)],
+                                    Circle().fill(LinearGradient(colors: [Color(platform: ReaderTheme.paper.background), Color(platform: ReaderTheme.night.background)],
                                                                  startPoint: .topLeading, endPoint: .bottomTrailing))
                                 } else {
-                                    Circle().fill(Color(nsColor: t.background))
+                                    Circle().fill(Color(platform: t.background))
                                 }
                                 Text("Aa").font(.system(size: 13, weight: .medium, design: .serif))
-                                    .foregroundStyle(Color(nsColor: t == .auto ? ReaderTheme.sepia.foreground : t.foreground))
+                                    .foregroundStyle(Color(platform: t == .auto ? ReaderTheme.sepia.foreground : t.foreground))
                             }
                             .frame(width: 40, height: 40)
                             .overlay(Circle().strokeBorder(settings.theme == t ? Color.accentColor : Color.primary.opacity(0.15),

@@ -204,7 +204,7 @@ final class AppModel {
 
     /// Opens a book, optionally at a section saved by `ReaderModel.sectionKey`.
     func open(_ url: URL, section: String? = nil) {
-        guard FileManager.default.fileExists(atPath: url.path) else {
+        guard CloudStore.isPresent(url) else {
             errorMessage = "The file at \(url.path) no longer exists."
             library.removeAll { $0.path == url.path }
             LibraryStore.save(library)
@@ -215,13 +215,19 @@ final class AppModel {
         Task {
             defer { isLoading = false }
             do {
-                let loaded = try await Task.detached(priority: .userInitiated) { try BookLoader.load(url: url) }.value
+                let loaded = try await Task.detached(priority: .userInitiated) {
+                    // With a managed folder the book is copied into it once and read from there on every device.
+                    let file = try CloudStore.importBook(url)
+                    try await CloudStore.ensureDownloaded(file)
+                    return try BookLoader.load(url: file)
+                }.value
                 let model = ReaderModel(loaded)
+                model.announce()
                 model.onProgress = { [weak self] id, p in self?.updateProgress(id, p) }
                 if let section { model.jump(toSectionKey: section) }
                 reader = model
                 library.removeAll { $0.id == loaded.bookID || $0.path == url.path }
-                library.insert(LibraryItem(id: loaded.bookID, path: url.path, title: loaded.title, author: loaded.author,
+                library.insert(LibraryItem(id: loaded.bookID, path: loaded.url.path, title: loaded.title, author: loaded.author,
                                            kind: loaded.kind, lastOpened: Date(), progress: model.record.progress), at: 0)
                 LibraryStore.save(library)
             } catch {
@@ -238,9 +244,32 @@ final class AppModel {
         hub.reload()
     }
 
+    /// Removes a book from every device's shelf (its highlights and study data are kept).
     func remove(_ item: LibraryItem) {
         library.removeAll { $0.id == item.id }
         LibraryStore.save(library)
+        CloudStore.removeBookFile(id: item.id, kind: item.kind)
+    }
+
+    /// Picks up books added or removed on another device, and (once, on the Mac) moves earlier data into iCloud.
+    func syncLibrary() {
+        let current = library, open = reader?.bookID
+        Task {
+            let updated = await Task.detached(priority: .utility) { () -> [LibraryItem] in
+                #if os(macOS)
+                _ = CloudStore.migrateToContainer(current)
+                #endif
+                return LibraryStore.reconcile(current, open: open)
+            }.value
+            // Keep anything opened while the scan ran.
+            let added = library.filter { item in !current.contains { $0.id == item.id } }
+            let merged = added + updated.filter { item in !added.contains { $0.id == item.id } }
+            if merged != library {
+                library = merged
+                LibraryStore.save(library)
+            }
+            hub.reload()
+        }
     }
 
     private var progressSaveTask: Task<Void, Never>?

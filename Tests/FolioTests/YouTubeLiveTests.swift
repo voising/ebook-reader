@@ -6,9 +6,9 @@ final class YouTubeLiveTests: XCTestCase {
     func testImportBuildsReadableEPUB() async throws {
         guard let link = ProcessInfo.processInfo.environment["FOLIO_LIVE_VIDEO"] else { throw XCTSkip("set FOLIO_LIVE_VIDEO") }
         let url = try await YouTube.importVideo(link) { print("status:", $0) }
-        XCTAssertNotNil(YouTube.videoID(forImported: url))
         let book = try BookLoader.load(url: url)
         let epub = try XCTUnwrap(book.epub)
+        XCTAssertNotNil(YouTube.videoID(forImported: epub))
         print("title:", book.title, "| author:", book.author, "| chapters:", epub.spine.count, "| toc:", book.toc.prefix(3).map(\.title))
         XCTAssertFalse(book.title.isEmpty)
         XCTAssertGreaterThan(epub.spine.count, 0)

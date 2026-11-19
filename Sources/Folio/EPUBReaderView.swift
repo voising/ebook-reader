@@ -156,8 +156,7 @@ struct EPUBReaderView: NSViewRepresentable {
             case "word": reader.saveWord(text, context: body["context"] as? String)
             case "unword": reader.undoSaveWord(text)
             case "copy":
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(text, forType: .string)
+                Platform.copy(text)
             case "scroll":
                 if let f = body["fraction"] as? NSNumber { reader.updateFraction(f.doubleValue) }
             case "nav":

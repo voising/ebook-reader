@@ -24,10 +24,9 @@ enum YouTube {
     // MARK: Identity
 
     /// The video id for an EPUB this importer created, or nil for ordinary books.
-    static func videoID(forImported url: URL) -> String? {
-        guard url.pathExtension == "epub",
-              url.deletingLastPathComponent().standardizedFileURL.path == AppPaths.videos.standardizedFileURL.path else { return nil }
-        return url.deletingPathExtension().lastPathComponent
+    static func videoID(forImported book: EPUBBook?) -> String? {
+        guard let identifier = book?.identifier, identifier.hasPrefix("youtube:") else { return nil }
+        return videoID(from: String(identifier.dropFirst("youtube:".count)))
     }
 
     static func videoID(from string: String) -> String? {

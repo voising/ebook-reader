@@ -21,7 +21,7 @@ struct StudyPanel: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(Color(platform: .windowBackgroundColor))
     }
 
     private var header: some View {
@@ -587,7 +587,7 @@ struct ReviewSessionView: View {
             }
             .padding(28)
             .frame(maxWidth: 620, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color(nsColor: .textBackgroundColor)))
+            .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color(platform: .textBackgroundColor)))
             .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(.quaternary))
             .shadow(color: .black.opacity(0.07), radius: 14, y: 5)
 

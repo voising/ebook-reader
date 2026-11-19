@@ -9,17 +9,17 @@ enum HighlightColor: String, Codable, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    var nsColor: NSColor {
+    var nsColor: PlatformColor {
         switch self {
-        case .yellow: NSColor(srgbRed: 1.00, green: 0.80, blue: 0.16, alpha: 1)
-        case .green: NSColor(srgbRed: 0.36, green: 0.78, blue: 0.45, alpha: 1)
-        case .blue: NSColor(srgbRed: 0.30, green: 0.60, blue: 1.00, alpha: 1)
-        case .pink: NSColor(srgbRed: 1.00, green: 0.42, blue: 0.58, alpha: 1)
-        case .purple: NSColor(srgbRed: 0.70, green: 0.48, blue: 0.96, alpha: 1)
+        case .yellow: PlatformColor(srgbRed: 1.00, green: 0.80, blue: 0.16, alpha: 1)
+        case .green: PlatformColor(srgbRed: 0.36, green: 0.78, blue: 0.45, alpha: 1)
+        case .blue: PlatformColor(srgbRed: 0.30, green: 0.60, blue: 1.00, alpha: 1)
+        case .pink: PlatformColor(srgbRed: 1.00, green: 0.42, blue: 0.58, alpha: 1)
+        case .purple: PlatformColor(srgbRed: 0.70, green: 0.48, blue: 0.96, alpha: 1)
         }
     }
 
-    var color: Color { Color(nsColor: nsColor) }
+    var color: Color { Color(platform: nsColor) }
     var label: String { rawValue.capitalized }
 }
 
@@ -74,7 +74,7 @@ struct BookRecord: Codable {
     var updatedAt: Date = Date()
 }
 
-/// Local (per-Mac) library entry.
+/// One book on this device's shelf.
 struct LibraryItem: Codable, Identifiable, Hashable {
     var id: String
     var path: String
@@ -84,7 +84,11 @@ struct LibraryItem: Codable, Identifiable, Hashable {
     var lastOpened: Date
     var progress: Double
 
-    var url: URL { URL(fileURLWithPath: path) }
+    /// The managed copy when Folio keeps the book itself, else wherever it was opened from on this Mac.
+    var url: URL {
+        if let managed = CloudStore.bookFile(id: id, kind: kind), CloudStore.isPresent(managed) { return managed }
+        return URL(fileURLWithPath: path)
+    }
 }
 
 struct TOCEntry: Identifiable, Hashable {

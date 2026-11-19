@@ -1,4 +1,3 @@
-import AppKit
 import Foundation
 
 enum BookError: LocalizedError {
@@ -6,6 +5,8 @@ enum BookError: LocalizedError {
     case invalidEPUB(String)
     case unreadablePDF
     case unsupported
+    case missingFile
+    case notDownloaded
 
     var errorDescription: String? {
         switch self {
@@ -13,6 +14,8 @@ enum BookError: LocalizedError {
         case .invalidEPUB(let why): "This EPUB looks malformed (\(why))."
         case .unreadablePDF: "This PDF couldn't be opened."
         case .unsupported: "Only EPUB and PDF files are supported."
+        case .missingFile: "This book's file is no longer there."
+        case .notDownloaded: "iCloud hasn't finished downloading this book yet. Try again in a moment."
         }
     }
 }
@@ -24,6 +27,8 @@ final class EPUBBook {
     let spine: [URL]
     let toc: [TOCEntry]
     let coverURL: URL?
+    /// The package's `dc:identifier`; transcripts imported from YouTube carry `youtube:<id>`.
+    let identifier: String?
 
     init(file: URL, bookID: String) throws {
         let fm = FileManager.default
@@ -32,6 +37,7 @@ final class EPUBBook {
         if !fm.fileExists(atPath: marker.path) {
             try? fm.removeItem(at: dir)
             try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+            #if os(macOS)
             let unzip = Process()
             unzip.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
             unzip.arguments = ["-q", "-o", file.path, "-d", dir.path]
@@ -41,6 +47,9 @@ final class EPUBBook {
             unzip.waitUntilExit()
             // unzip exits 1 for mere warnings
             guard unzip.terminationStatus <= 1 else { throw BookError.unzipFailed }
+            #else
+            do { try Zip.extract(file, to: dir) } catch { throw BookError.unzipFailed }
+            #endif
             fm.createFile(atPath: marker.path, contents: Data())
         }
         root = dir.standardizedFileURL
@@ -55,6 +64,7 @@ final class EPUBBook {
 
         let metadata = opf.first("metadata")
         title = metadata?.first("title")?.allText.collapsed.nilIfEmpty ?? file.deletingPathExtension().lastPathComponent
+        identifier = metadata?.first("identifier")?.allText.collapsed.nilIfEmpty
         author = metadata?.all("creator").map(\.allText.collapsed).filter { !$0.isEmpty }.joined(separator: ", ") ?? ""
 
         struct Item { let href: URL; let mediaType: String; let properties: String }

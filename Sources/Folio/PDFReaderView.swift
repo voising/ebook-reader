@@ -210,8 +210,7 @@ final class FolioPDFView: PDFView {
                 guard let self else { return }
                 let marked = self.activeHighlightID.flatMap { id in self.reader?.highlights.first { $0.id == id }?.text }
                 if let s = marked ?? self.currentSelection?.string {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(s, forType: .string)
+                    Platform.copy(s)
                 }
                 self.hideBar()
             },

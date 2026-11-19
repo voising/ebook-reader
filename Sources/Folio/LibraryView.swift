@@ -17,7 +17,7 @@ struct HubView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(Color(platform: .windowBackgroundColor))
         .navigationTitle("Folio")
         .toolbar {
             ToolbarItem(placement: .principal) {
@@ -32,9 +32,10 @@ struct HubView: View {
             }
         }
         .sheet(isPresented: $app.showAddVideo) { AddVideoSheet().environment(app) }
-        .onAppear { app.hub.reload() }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+        .onAppear { app.hub.reload(); app.syncLibrary() }
+        .onReceive(NotificationCenter.default.publisher(for: Platform.didBecomeActive)) { _ in
             if app.hub.session == nil { app.hub.reload() }
+            app.syncLibrary()
         }
     }
 }
@@ -93,7 +94,7 @@ struct LibraryView: View {
             .frame(maxWidth: .infinity)
         }
         .background(
-            LinearGradient(colors: [Color(nsColor: .windowBackgroundColor), Color(nsColor: .underPageBackgroundColor).opacity(0.6)],
+            LinearGradient(colors: [Color(platform: .windowBackgroundColor), Color(platform: .underPageBackgroundColor).opacity(0.6)],
                            startPoint: .top, endPoint: .bottom)
         )
         .overlay {
@@ -178,7 +179,7 @@ struct BookCover: View {
 
     var body: some View {
         if let image = NSImage(contentsOf: AppPaths.cover(for: item.id)) {
-            Image(nsImage: image).resizable().aspectRatio(contentMode: .fill)
+            Image(platform: image).resizable().aspectRatio(contentMode: .fill)
         } else {
             placeholder
         }

@@ -35,7 +35,7 @@ final class StudyModel {
     @ObservationIgnored private var dirty = false
 
     init(bookID: String, title: String, author: String) {
-        switch CloudStore.read(LearnData.self, at: CloudStore.learnURL(bookID)) {
+        switch CloudStore.readSynced(LearnData.self, at: CloudStore.learnURL(bookID)) {
         case .value(let saved):
             data = saved
         case .missing:
@@ -214,7 +214,7 @@ final class StudyModel {
     /// Picks up cards and reviews made on another Mac, and recovers once an unreadable file becomes readable.
     func reloadFromCloud() {
         guard saveBlocked || (!dirty && busy.isEmpty && quiz == nil) else { return }
-        switch CloudStore.read(LearnData.self, at: CloudStore.learnURL(data.bookID)) {
+        switch CloudStore.readSynced(LearnData.self, at: CloudStore.learnURL(data.bookID)) {
         case .value(var disk):
             if saveBlocked {
                 // Keep what was made while the file couldn't be read.
