@@ -198,6 +198,10 @@ struct RootView: View {
 final class AppModel {
     static let shared = AppModel()
 
+    #if os(macOS)
+    /// Runs before the stores below read anything, so they start from the migrated data.
+    @ObservationIgnored private let migrated: Void = CloudStore.migrateData()
+    #endif
     var library: [LibraryItem] = LibraryStore.load()
     var reader: ReaderModel?
     let hub = StudyHub()
@@ -297,7 +301,7 @@ final class AppModel {
         Task {
             let updated = await Task.detached(priority: .utility) { () -> [LibraryItem] in
                 #if os(macOS)
-                _ = CloudStore.migrateToContainer(current)
+                CloudStore.migrateBooks(current)
                 #endif
                 return LibraryStore.reconcile(current, open: open)
             }.value

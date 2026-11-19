@@ -204,28 +204,36 @@ enum CloudStore {
     #if os(macOS)
     // MARK: Moving into the iCloud container
 
-    /// The first time a Mac build gets the container, copies what the earlier builds saved (records, study
-    /// data, covers and the library's book files) into it. Copies only what's missing and never deletes
-    /// the originals, so it is safe to run again.
-    static func migrateToContainer(_ library: [LibraryItem]) -> Bool {
-        let flag = "migratedToContainer.v1"
-        guard backing == .container, !UserDefaults.standard.bool(forKey: flag) else { return false }
-        let fm = FileManager.default
-        func copyMissing(from source: URL, to dest: URL, ext: String) {
-            for file in (try? fm.contentsOfDirectory(at: source, includingPropertiesForKeys: nil)) ?? [] where file.pathExtension == ext {
-                let target = dest.appendingPathComponent(file.lastPathComponent)
-                if !isPresent(target) { try? fm.copyItem(at: file, to: target) }
-            }
-        }
+    /// The first time a Mac build gets the container, copies what the earlier builds saved into it: records,
+    /// study data and covers here (quick, done before anything is read), book files in `migrateBooks`.
+    /// Copies only what's missing and never deletes the originals, so it is safe to run again.
+    static func migrateData() {
+        let flag = "migratedToContainer.data.v1"
+        guard backing == .container, !UserDefaults.standard.bool(forKey: flag) else { return }
         copyMissing(from: legacyRoot.appendingPathComponent("Books"), to: booksDir, ext: "json")
         copyMissing(from: legacyRoot.appendingPathComponent("Learn"), to: learnDir, ext: "json")
         copyMissing(from: AppPaths.localCovers, to: AppPaths.covers, ext: "png")
+        UserDefaults.standard.set(true, forKey: flag)
+    }
+
+    /// Copies the shelf's book files into the container so other devices can open them.
+    static func migrateBooks(_ library: [LibraryItem]) {
+        let flag = "migratedToContainer.books.v1"
+        guard backing == .container, !UserDefaults.standard.bool(forKey: flag) else { return }
+        let fm = FileManager.default
         for item in library where fm.fileExists(atPath: item.path) {
             guard let dest = bookFile(id: item.id, kind: item.kind), !isPresent(dest) else { continue }
             try? fm.copyItem(at: URL(fileURLWithPath: item.path), to: dest)
         }
         UserDefaults.standard.set(true, forKey: flag)
-        return true
+    }
+
+    private static func copyMissing(from source: URL, to dest: URL, ext: String) {
+        let fm = FileManager.default
+        for file in (try? fm.contentsOfDirectory(at: source, includingPropertiesForKeys: nil)) ?? [] where file.pathExtension == ext {
+            let target = dest.appendingPathComponent(file.lastPathComponent)
+            if !isPresent(target) { try? fm.copyItem(at: file, to: target) }
+        }
     }
     #endif
 
@@ -325,6 +333,8 @@ extension LibraryStore {
             guard let kind = BookKind(rawValue: url.pathExtension.lowercased()) else { continue }
             files[url.deletingPathExtension().lastPathComponent] = (name, kind)
         }
+        // Ask iCloud for the covers up front; they are small and the shelf looks bare without them.
+        for id in files.keys { try? FileManager.default.startDownloadingUbiquitousItem(at: AppPaths.cover(for: id)) }
         let managed = filesDir.standardizedFileURL.path
         var out = items.filter { item in
             // A book that lived in the managed folder and is gone from it was removed on another device.
