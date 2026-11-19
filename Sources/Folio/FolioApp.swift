@@ -51,6 +51,7 @@ struct FolioApp: App {
                 Divider()
                 Button("Review Due Cards") { app.showHub(.review) }
                     .keyboardShortcut("r", modifiers: [.command, .shift])
+                Button("Word List") { app.showHub(.words) }
                 Button("Ask Your Library") { app.showHub(.ask) }
                 Button("Knowledge Map") { app.showHub(.map) }
             }
@@ -84,10 +85,12 @@ struct FolioApp: App {
                     .keyboardShortcut("n", modifiers: [.command, .option])
                     .disabled(app.reader == nil)
                 Divider()
-                Button("Bigger Text") { ReaderSettings.shared.fontSize = min(30, ReaderSettings.shared.fontSize + 1) }
+                Button("Zoom In") { app.zoom(.in) }
                     .keyboardShortcut("+", modifiers: .command)
-                Button("Smaller Text") { ReaderSettings.shared.fontSize = max(14, ReaderSettings.shared.fontSize - 1) }
+                Button("Zoom Out") { app.zoom(.out) }
                     .keyboardShortcut("-", modifiers: .command)
+                Button("Actual Size") { app.zoom(.reset) }
+                    .keyboardShortcut("0", modifiers: .command)
             }
         }
     }
@@ -98,7 +101,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let url = urls.first { MainActor.assumeIsolated { AppModel.shared.open(url) } }
     }
 
+    /// "+" is a shifted key on most layouts, so plain ⌘= also zooms in (the menu item covers ⌘⇧=).
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
+                  event.charactersIgnoringModifiers == "=" else { return event }
+            MainActor.assumeIsolated { AppModel.shared.zoom(.in) }
+            return nil
+        }
+    }
+
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+}
+
+enum ZoomStep { case `in`, out, reset }
+
+extension AppModel {
+    /// PDFs scale the page; everything else scales the reading text.
+    func zoom(_ step: ZoomStep) {
+        if let reader, reader.kind == .pdf, let pdf = reader.pdfView {
+            switch step {
+            case .in: pdf.zoomIn(nil)
+            case .out: pdf.zoomOut(nil)
+            case .reset: pdf.autoScales = true
+            }
+            return
+        }
+        let settings = ReaderSettings.shared
+        switch step {
+        case .in: settings.fontSize = min(30, settings.fontSize + 1)
+        case .out: settings.fontSize = max(14, settings.fontSize - 1)
+        case .reset: settings.fontSize = 19
+        }
+    }
 }
 
 struct RootView: View {
@@ -138,6 +173,7 @@ final class AppModel {
     var library: [LibraryItem] = LibraryStore.load()
     var reader: ReaderModel?
     let hub = StudyHub()
+    let words = WordStore()
     /// `-hubTab Review` on the command line opens straight to a tab.
     var hubTab: HubTab = UserDefaults.standard.string(forKey: "hubTab").flatMap(HubTab.init(rawValue:)) ?? .library
     var showAddVideo = false

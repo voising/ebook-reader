@@ -11,6 +11,7 @@ struct HubView: View {
             switch app.hubTab {
             case .library: LibraryView()
             case .review: ReviewHubView(hub: app.hub)
+            case .words: WordsHubView(store: app.words)
             case .ask: AskHubView(hub: app.hub)
             case .map: MapHubView(hub: app.hub)
             }
@@ -135,8 +136,10 @@ private struct BookCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            BookCover(item: item)
+            // The cover fills a fixed 2:3 slot as an overlay so wide art (video thumbnails) can't widen the card.
+            Color.clear
                 .aspectRatio(2 / 3, contentMode: .fit)
+                .overlay { BookCover(item: item) }
                 .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 5, style: .continuous).strokeBorder(.black.opacity(0.08), lineWidth: 0.5))
                 .shadow(color: .black.opacity(hovering ? 0.28 : 0.16), radius: hovering ? 16 : 8, y: hovering ? 10 : 5)

@@ -37,6 +37,8 @@ final class FolioPDFView: PDFView {
     private var bar: NSHostingView<SelectionBar>?
     private var pendingShow: DispatchWorkItem?
     private var activeHighlightID: String?
+    /// Click count of the last mouse-down in this view; 2 means the selection is a double-clicked word.
+    private var lastClickCount = 0
     private static let prefix = "folio:"
 
     override init(frame: NSRect) {
@@ -101,9 +103,20 @@ final class FolioPDFView: PDFView {
 
     // MARK: Selection → highlight
 
-    func highlightSelection(_ color: HighlightColor) {
+    /// Text of the highlight whose bar is showing; menu commands fall back to it when nothing is selected.
+    var focusedText: String? {
+        activeHighlightID.flatMap { id in reader?.highlights.first { $0.id == id }?.text }
+    }
+
+    @discardableResult
+    func highlightSelection(_ color: HighlightColor) -> String? {
+        if currentSelection?.string?.isEmpty != false, let id = activeHighlightID {
+            reader?.recolor(id, to: color)
+            hideBar()
+            return id
+        }
         guard let sel = currentSelection, let doc = document,
-              let text = sel.string?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return }
+              let text = sel.string?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return nil }
         var rects: [PageRect] = []
         for line in sel.selectionsByLine() {
             for page in line.pages {
@@ -111,14 +124,15 @@ final class FolioPDFView: PDFView {
                 if b.width > 0.5, b.height > 0.5 { rects.append(PageRect(page: doc.index(for: page), rect: b)) }
             }
         }
-        guard !rects.isEmpty else { return }
-        reader?.addPDFHighlight(text: text, rects: rects, color: color)
+        guard !rects.isEmpty else { return nil }
+        let id = reader?.addPDFHighlight(text: text, rects: rects, color: color)
         clearSelection()
         hideBar()
+        return id
     }
 
     func askAboutSelection() {
-        guard let text = currentSelection?.string?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return }
+        guard let text = (currentSelection?.string ?? focusedText)?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return }
         reader?.ask(about: text)
         hideBar()
     }
@@ -129,29 +143,59 @@ final class FolioPDFView: PDFView {
             if activeHighlightID == nil { hideBar() }
             return
         }
-        scheduleSelectionBar()
+        // Only a mouse selection highlights on its own; Select All or find results just get the bar.
+        scheduleSelectionBar(autoHighlight: isOwnMouseEvent(NSApp.currentEvent))
     }
 
-    private func scheduleSelectionBar() {
+    /// True for a left-mouse event aimed at this view, as opposed to a menu or sidebar click that sets the selection.
+    private func isOwnMouseEvent(_ event: NSEvent?) -> Bool {
+        guard let event, let window, event.window === window else { return false }
+        switch event.type {
+        case .leftMouseDragged: return true
+        case .leftMouseDown, .leftMouseUp: return bounds.contains(convert(event.locationInWindow, from: nil))
+        default: return false
+        }
+    }
+
+    private func scheduleSelectionBar(autoHighlight: Bool) {
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
-            if NSEvent.pressedMouseButtons != 0 { self.scheduleSelectionBar(); return }
+            if NSEvent.pressedMouseButtons != 0 { self.scheduleSelectionBar(autoHighlight: autoHighlight); return }
             guard let sel = self.currentSelection, let page = sel.pages.first else { return }
             var rect = self.convert(sel.bounds(for: page), from: page)
             if let last = sel.pages.last, last != page { rect = rect.union(self.convert(sel.bounds(for: last), from: last)) }
             self.activeHighlightID = nil
-            self.showBar(above: rect, active: nil)
+            // A single word only gets the bar; longer mouse selections are highlighted straight away.
+            let words = (sel.string ?? "").split(whereSeparator: \.isWhitespace).count
+            // A double-clicked word goes to the word list, with the text around it as context.
+            if autoHighlight, words == 1, self.lastClickCount == 2 {
+                self.lastClickCount = 0
+                let around = sel.copy() as? PDFSelection
+                around?.extend(atStart: 140)
+                around?.extend(atEnd: 140)
+                if let saved = self.reader?.saveWord(sel.string ?? "", context: around?.string) {
+                    self.showBar(above: rect, active: nil, savedWord: saved)
+                    return
+                }
+            }
+            if autoHighlight, words > 1, let id = self.highlightSelection(.yellow) {
+                self.activeHighlightID = id
+                self.showBar(above: rect, active: .yellow)
+            } else {
+                self.showBar(above: rect, active: nil)
+            }
         }
         pendingShow = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: work)
     }
 
-    private func showBar(above rect: NSRect, active: HighlightColor?) {
+    private func showBar(above rect: NSRect, active: HighlightColor?, savedWord: String? = nil) {
         hideBar()
         let isMark = activeHighlightID != nil
         let view = NSHostingView(rootView: SelectionBar(
             activeColor: active,
             isExisting: isMark,
+            onUndoWord: savedWord.map { word in { [weak self] in self?.reader?.undoSaveWord(word); self?.hideBar() } },
             onColor: { [weak self] c in
                 guard let self else { return }
                 if let id = self.activeHighlightID { self.reader?.recolor(id, to: c); self.hideBar() } else { self.highlightSelection(c) }
@@ -162,14 +206,18 @@ final class FolioPDFView: PDFView {
                     self.reader?.ask(about: h.text); self.hideBar()
                 } else { self.askAboutSelection() }
             },
-            onSecondary: { [weak self] in
+            onCopy: { [weak self] in
                 guard let self else { return }
-                if let id = self.activeHighlightID {
-                    self.reader?.removeHighlight(id)
-                } else if let s = self.currentSelection?.string {
+                let marked = self.activeHighlightID.flatMap { id in self.reader?.highlights.first { $0.id == id }?.text }
+                if let s = marked ?? self.currentSelection?.string {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(s, forType: .string)
                 }
+                self.hideBar()
+            },
+            onRemove: { [weak self] in
+                guard let self else { return }
+                if let id = self.activeHighlightID { self.reader?.removeHighlight(id) }
                 self.hideBar()
             }
         ))
@@ -193,8 +241,10 @@ final class FolioPDFView: PDFView {
     override func mouseDown(with event: NSEvent) {
         hideBar()
         activeHighlightID = nil
+        lastClickCount = event.clickCount
         let point = convert(event.locationInWindow, from: nil)
-        if let page = page(for: point, nearest: false) {
+        // A double-click selects the word even inside a highlight, so it can be saved to the word list.
+        if event.clickCount < 2, let page = page(for: point, nearest: false) {
             let p = convert(point, to: page)
             if let hit = page.annotations.first(where: { ($0.userName ?? "").hasPrefix(Self.prefix) && $0.bounds.contains(p) }),
                let id = hit.userName?.dropFirst(Self.prefix.count) {
@@ -241,9 +291,12 @@ final class FolioPDFView: PDFView {
 struct SelectionBar: View {
     var activeColor: HighlightColor?
     var isExisting: Bool
+    /// Set when the selection is a word that was just saved to the word list.
+    var onUndoWord: (() -> Void)?
     var onColor: (HighlightColor) -> Void
     var onAsk: () -> Void
-    var onSecondary: () -> Void
+    var onCopy: () -> Void
+    var onRemove: () -> Void
 
     var body: some View {
         HStack(spacing: 7) {
@@ -258,8 +311,16 @@ struct SelectionBar: View {
             Rectangle().fill(.white.opacity(0.18)).frame(width: 1, height: 16).padding(.horizontal, 2)
             Button(action: onAsk) { Label("Ask Claude", systemImage: "sparkle").labelStyle(.titleAndIcon) }
                 .buttonStyle(BarButtonStyle())
-            Button(isExisting ? "Remove" : "Copy", action: onSecondary)
-                .buttonStyle(BarButtonStyle(tint: isExisting ? Color(red: 1, green: 0.54, blue: 0.5) : .white))
+            Button("Copy", action: onCopy).buttonStyle(BarButtonStyle())
+            if let onUndoWord {
+                Rectangle().fill(.white.opacity(0.18)).frame(width: 1, height: 16).padding(.horizontal, 2)
+                Text("✓ Saved to Words").font(.system(size: 12.5, weight: .medium)).foregroundStyle(.white.opacity(0.62))
+                Button("Undo", action: onUndoWord).buttonStyle(BarButtonStyle())
+            }
+            if isExisting {
+                Button("Remove", action: onRemove)
+                    .buttonStyle(BarButtonStyle(tint: Color(red: 1, green: 0.54, blue: 0.5)))
+            }
         }
         .padding(.horizontal, 9)
         .padding(.vertical, 7)

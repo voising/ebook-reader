@@ -2,7 +2,7 @@ import PDFKit
 import SwiftUI
 
 enum HubTab: String, CaseIterable, Identifiable {
-    case library = "Library", review = "Review", ask = "Ask", map = "Map"
+    case library = "Library", review = "Review", words = "Words", ask = "Ask", map = "Map"
     var id: String { rawValue }
 }
 

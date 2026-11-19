@@ -77,6 +77,7 @@ enum ReaderScripts {
     #folio-bar .act { color: rgba(255,255,255,.92); padding: 3px 7px; border-radius: 7px; }
     #folio-bar .act:hover { background: rgba(255,255,255,.12); }
     #folio-bar .act.danger { color: #FF8A80; }
+    #folio-bar .note { color: rgba(255,255,255,.62); padding: 3px 2px 3px 5px; }
 
     #folio-next {
       display: block; box-sizing: border-box; max-width: var(--folio-width); margin: 0 auto; padding: 32px 56px 120px;
@@ -186,6 +187,8 @@ enum ReaderScripts {
 
       // Floating toolbar
       let bar = null, mode = null, pending = null, target = null;
+      // The double-clicked word that was just sent to the word list; the bar confirms it and offers Undo.
+      let savedWord = null;
       function ensureBar() {
         if (bar) return bar;
         bar = document.createElement('div');
@@ -212,8 +215,14 @@ enum ReaderScripts {
         });
         b.appendChild(sep());
         b.appendChild(btn('act', '✦ Ask Claude', 'Ask Claude about this passage', onAsk));
-        if (mode === 'select') b.appendChild(btn('act', 'Copy', 'Copy', onCopy));
-        else b.appendChild(btn('act danger', 'Remove', 'Remove highlight', onRemove));
+        b.appendChild(btn('act', 'Copy', 'Copy', onCopy));
+        if (mode === 'select' && pending && savedWord === pending.text) {
+          b.appendChild(sep());
+          const n = document.createElement('span'); n.className = 'note'; n.textContent = '✓ Saved to Words';
+          b.appendChild(n);
+          b.appendChild(btn('act', 'Undo', 'Remove it from Words', onUndoWord));
+        }
+        if (mode === 'mark') b.appendChild(btn('act danger', 'Remove', 'Remove highlight', onRemove));
         b.style.display = 'flex';
         const bw = b.offsetWidth, bh = b.offsetHeight;
         let top = rect.top - bh - 10;
@@ -228,7 +237,29 @@ enum ReaderScripts {
         if (!bar) return;
         bar.classList.remove('show');
         bar.style.display = 'none';
-        mode = null; pending = null; target = null;
+        mode = null; pending = null; target = null; savedWord = null;
+      }
+      function cleanWord(t) {
+        const w = t.trim().replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '');
+        return w && w.length <= 40 && !/\s/.test(w) && /\p{L}/u.test(w) ? w : null;
+      }
+      // The sentence around the start of a range, taken from its paragraph.
+      function sentenceAround(r) {
+        const el = r.startContainer.nodeType === 1 ? r.startContainer : r.startContainer.parentNode;
+        const block = (el && el.closest && el.closest('p,li,blockquote,td,dd,dt,h1,h2,h3,h4,h5,h6,div')) || document.body;
+        const pre = document.createRange();
+        pre.setStart(block, 0);
+        try { pre.setEnd(r.startContainer, r.startOffset); } catch (e) { return ''; }
+        const text = block.textContent, at = pre.toString().length;
+        let s = at, e = at;
+        while (s > 0 && !/[.!?…]/.test(text[s - 1]) && at - s < 240) s--;
+        while (e < text.length && !/[.!?…]/.test(text[e]) && e - at < 240) e++;
+        return text.slice(s, Math.min(e + 1, text.length)).replace(/\s+/g, ' ').trim();
+      }
+      function onUndoWord() {
+        const w = savedWord && cleanWord(savedWord);
+        if (w) post({ type: 'unword', text: w });
+        hideBar();
       }
       function captureSelection() {
         const sel = window.getSelection();
@@ -242,7 +273,7 @@ enum ReaderScripts {
         const end = offsetOf(r.endContainer, r.endOffset);
         const text = r.toString().trim();
         if (!text || end <= start) return null;
-        return { start, end, text, rect: r.getBoundingClientRect() };
+        return { start, end, text, range: r, rect: r.getBoundingClientRect() };
       }
       function onColor(c) {
         if (mode === 'select' && pending) {
@@ -258,21 +289,49 @@ enum ReaderScripts {
         post({ type: 'ask', text });
         hideBar();
       }
-      function onCopy() { if (pending) post({ type: 'copy', text: pending.text }); hideBar(); }
+      function onCopy() {
+        const text = mode === 'select' && pending ? pending.text : marks(target).map((m) => m.textContent).join('');
+        if (text) post({ type: 'copy', text });
+        hideBar();
+      }
+      // Shows the bar for an existing highlight: recolor, ask, copy or remove.
+      function focusMark(id) {
+        const ms = marks(id);
+        if (!ms.length) return;
+        mode = 'mark'; target = id;
+        showBar(unionRect(ms), ms[0].getAttribute('data-color'));
+      }
       function onRemove() { if (target) post({ type: 'remove', id: target }); hideBar(); }
 
       document.addEventListener('mousedown', (e) => { if (bar && !bar.contains(e.target)) hideBar(); });
       document.addEventListener('mouseup', (e) => {
         if (bar && bar.contains(e.target)) return;
+        if (e.button !== 0 || e.ctrlKey) return;
         setTimeout(() => {
           const p = captureSelection();
-          if (p) { mode = 'select'; pending = p; showBar(p.rect, null); return; }
-          const m = e.target && e.target.closest ? e.target.closest('mark.folio-hl') : null;
-          if (m) {
-            mode = 'mark'; target = m.getAttribute('data-id');
-            showBar(unionRect(marks(target)), m.getAttribute('data-color'));
+          // A single word (double-click, or a lookup) only gets the bar; it is not highlighted on its own.
+          if (p && !/\s/.test(p.text)) { mode = 'select'; pending = p; showBar(p.rect, null); return; }
+          if (p) {
+            // Selecting with the mouse highlights in yellow straight away; the bar then offers the other colours.
+            post({ type: 'highlight', start: p.start, end: p.end, text: p.text, color: 'yellow', focus: true });
+            window.getSelection().removeAllRanges();
+            return;
           }
+          const m = e.target && e.target.closest ? e.target.closest('mark.folio-hl') : null;
+          if (m) focusMark(m.getAttribute('data-id'));
         }, 0);
+      });
+
+      // Double-clicking a word saves it to the word list. The mouseup above shows the bar; whichever of the
+      // two runs first, the bar ends up showing the confirmation.
+      document.addEventListener('dblclick', (e) => {
+        if (e.button !== 0 || e.ctrlKey || (bar && bar.contains(e.target))) return;
+        const p = captureSelection();
+        const w = p && cleanWord(p.text);
+        if (!w) return;
+        post({ type: 'word', text: w, context: sentenceAround(p.range) });
+        savedWord = p.text;
+        if (mode === 'select' && pending && pending.text === p.text) showBar(pending.rect, null);
       });
 
       let scrollTimer = null;
@@ -295,6 +354,7 @@ enum ReaderScripts {
       window.folio = {
         load(list) { list.forEach(wrap); },
         apply(h) { wrap(h); flash(h.id); },
+        focus(id) { focusMark(id); },
         remove(id) { unwrap(id); },
         recolor(id, c) { marks(id).forEach((m) => m.setAttribute('data-color', c)); },
         scrollToHighlight(id, smooth) {
@@ -309,16 +369,22 @@ enum ReaderScripts {
           const max = document.documentElement.scrollHeight - window.innerHeight;
           window.scrollTo(0, Math.max(0, max * f));
         },
+        // With no live selection, the menu commands act on the highlight whose bar is showing.
+        focusedText() { return mode === 'mark' && target ? marks(target).map((m) => m.textContent).join('') : ''; },
         highlightSelection(c) {
           const p = captureSelection();
-          if (!p) return;
+          if (!p) {
+            if (mode === 'mark' && target) { post({ type: 'recolor', id: target, color: c }); hideBar(); }
+            return;
+          }
           post({ type: 'highlight', start: p.start, end: p.end, text: p.text, color: c });
           window.getSelection().removeAllRanges();
           hideBar();
         },
         askSelection() {
           const p = captureSelection();
-          if (p) post({ type: 'ask', text: p.text });
+          const text = p ? p.text : window.folio.focusedText();
+          if (text) post({ type: 'ask', text });
           hideBar();
         },
         find(q, n, smooth) {

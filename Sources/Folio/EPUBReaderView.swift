@@ -149,10 +149,12 @@ struct EPUBReaderView: NSViewRepresentable {
             switch type {
             case "highlight":
                 guard let s = body["start"] as? NSNumber, let e = body["end"] as? NSNumber else { return }
-                reader.addEPUBHighlight(start: s.intValue, end: e.intValue, text: text, color: color)
+                reader.addEPUBHighlight(start: s.intValue, end: e.intValue, text: text, color: color, focus: body["focus"] as? Bool == true)
             case "recolor": reader.recolor(id, to: color)
             case "remove": reader.removeHighlight(id)
             case "ask": reader.ask(about: text)
+            case "word": reader.saveWord(text, context: body["context"] as? String)
+            case "unword": reader.undoSaveWord(text)
             case "copy":
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(text, forType: .string)

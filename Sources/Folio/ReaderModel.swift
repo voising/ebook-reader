@@ -246,20 +246,22 @@ final class ReaderModel {
 
     // MARK: - Highlights
 
-    func addEPUBHighlight(start: Int, end: Int, text: String, color: HighlightColor) {
+    func addEPUBHighlight(start: Int, end: Int, text: String, color: HighlightColor, focus: Bool = false) {
         guard let epub else { return }
         let h = Highlight(text: text, color: color, chapterHref: epub.relativeHref(chapterIndex),
                           chapterTitle: epub.chapterTitle(chapterIndex), start: start, end: end)
         record.highlights.append(h)
-        js("folio.apply(\(Self.json(h)))")
+        js("folio.apply(\(Self.json(h)))" + (focus ? "; folio.focus(\(ReaderScripts.jsonString(h.id)))" : ""))
         persist()
     }
 
-    func addPDFHighlight(text: String, rects: [PageRect], color: HighlightColor) {
+    @discardableResult
+    func addPDFHighlight(text: String, rects: [PageRect], color: HighlightColor) -> String {
         let h = Highlight(text: text, color: color, chapterTitle: pdfSection(for: rects.first?.page).title, rects: rects)
         record.highlights.append(h)
         pdfView?.addAnnotations(for: h)
         persist()
+        return h.id
     }
 
     func recolor(_ id: String, to color: HighlightColor) {
@@ -277,6 +279,17 @@ final class ReaderModel {
         pdfView?.removeAnnotations(for: id)
         persist()
     }
+
+    // MARK: - Word list
+
+    /// Saves a double-clicked word to the library-wide list. Returns the cleaned word, or nil if nothing was saved.
+    @discardableResult
+    func saveWord(_ raw: String, context: String?) -> String? {
+        let source = [title, currentChapterTitle].filter { !$0.isEmpty }.joined(separator: " · ")
+        return AppModel.shared.words.add(raw, context: context, bookID: bookID, source: source)
+    }
+
+    func undoSaveWord(_ raw: String) { AppModel.shared.words.undoAdd(raw) }
 
     func highlightSelection(_ color: HighlightColor = .yellow) {
         if kind == .epub { js("folio.highlightSelection('\(color.rawValue)')") } else { pdfView?.highlightSelection(color) }
@@ -526,9 +539,9 @@ final class ReaderModel {
             self?.study.makeCard(from: text)
         }
         if kind == .epub {
-            webView?.evaluateJavaScript("window.getSelection().toString()") { value, _ in done(value as? String) }
+            webView?.evaluateJavaScript("window.getSelection().toString() || window.folio.focusedText()") { value, _ in done(value as? String) }
         } else {
-            done(pdfView?.currentSelection?.string)
+            done(pdfView?.currentSelection?.string ?? pdfView?.focusedText)
         }
     }
 
