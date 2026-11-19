@@ -94,13 +94,13 @@ struct GraphView: View {
     @State private var dragOrigin: CGPoint?
 
     private static let chipWidth: CGFloat = 128
-    private static let chipFont = NSFont.systemFont(ofSize: 11.5, weight: .semibold)
+    private static let chipFont = PlatformFont.systemFont(ofSize: 11.5, weight: .semibold)
 
     /// Chips are sized from the label up front, so edges can stop exactly at their borders.
     static func chipSize(_ label: String) -> CGSize {
         let bounds = (label as NSString).boundingRect(with: CGSize(width: chipWidth - 22, height: 60),
                                                       options: [.usesLineFragmentOrigin, .usesFontLeading],
-                                                      attributes: [.font: chipFont])
+                                                      attributes: [.font: chipFont], context: nil)
         return CGSize(width: min(chipWidth, ceil(bounds.width) + 22), height: min(60, ceil(bounds.height)) + 13)
     }
 

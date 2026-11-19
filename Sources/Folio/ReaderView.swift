@@ -34,14 +34,22 @@ struct ReaderView: View {
                 footer
             }
             .background(Color(platform: theme.theme.background))
-            .inspector(isPresented: $reader.showChat) {
+            .inspector(isPresented: Platform.hasClaude ? $reader.showChat : .constant(false)) {
                 ChatView(chat: reader.chat, chrome: .reader(reader))
                     .inspectorColumnWidth(min: 300, ideal: 370, max: 560)
             }
+            #if os(iOS)
+            // On iPad the bar belongs to the detail column, so its title and buttons are attached here.
+            .navigationTitle(reader.title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { toolbar }
+            #endif
         }
+        #if os(macOS)
         .navigationTitle(reader.title)
         .navigationSubtitle(reader.currentChapterTitle)
         .toolbar { toolbar }
+        #endif
         .onReceive(NotificationCenter.default.publisher(for: Platform.didBecomeActive)) { _ in
             reader.reloadFromCloud()
         }
@@ -85,8 +93,14 @@ struct ReaderView: View {
         .animation(.easeOut(duration: 0.3), value: reader.progress)
     }
 
+    #if os(macOS)
+    private static let leading = ToolbarItemPlacement.navigation
+    #else
+    private static let leading = ToolbarItemPlacement.topBarLeading
+    #endif
+
     @ToolbarContentBuilder private var toolbar: some ToolbarContent {
-        ToolbarItem(placement: .navigation) {
+        ToolbarItem(placement: Self.leading) {
             Button { app.closeBook() } label: { Label("Library", systemImage: "books.vertical") }
                 .help("Back to Library")
         }
@@ -136,10 +150,12 @@ struct ReaderView: View {
                 .popover(isPresented: $showAppearance, arrowEdge: .bottom) {
                     AppearancePopover(settings: settings, isPDF: reader.kind == .pdf)
                 }
-            Button { withAnimation { reader.showChat.toggle() } } label: {
-                Label("Ask Claude", systemImage: reader.showChat ? "bubble.right.fill" : "bubble.right")
+            if Platform.hasClaude {
+                Button { withAnimation { reader.showChat.toggle() } } label: {
+                    Label("Ask Claude", systemImage: reader.showChat ? "bubble.right.fill" : "bubble.right")
+                }
+                .help("Toggle Claude chat (⌥⌘C)")
             }
-            .help("Toggle Claude chat (⌥⌘C)")
         }
     }
 }

@@ -1,5 +1,6 @@
 import Foundation
 
+#if os(macOS)
 /// Runs `claude -p` with streaming JSON output and forwards text deltas on the main queue.
 final class ClaudeRun {
     enum Event {
@@ -109,7 +110,28 @@ final class ClaudeRun {
     }
 }
 
+#else
+/// There is no `claude` command on iPad: every run fails with a pointer to the Mac.
+final class ClaudeRun {
+    enum Event {
+        case session(String)
+        case delta(String)
+        case fullText(String)
+        case result(String)
+        case failure(String)
+        case finished(status: Int32, stderr: String)
+    }
+
+    init(arguments: [String], input: String, onEvent: @escaping (Event) -> Void) throws {
+        throw ClaudeCLI.NotFound()
+    }
+
+    func cancel() {}
+}
+#endif
+
 enum ClaudeCLI {
+    #if os(macOS)
     struct NotFound: LocalizedError {
         var errorDescription: String? {
             "Couldn't find the `claude` command. Install Claude Code (https://claude.com/claude-code) and make sure it's on your PATH."
@@ -146,6 +168,12 @@ enum ClaudeCLI {
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return fm.isExecutableFile(atPath: path) ? URL(fileURLWithPath: path) : nil
     }()
+
+    #else
+    struct NotFound: LocalizedError {
+        var errorDescription: String? { Platform.claudeUnavailable }
+    }
+    #endif
 
     /// Fixed cwd so `--resume` finds the session it created.
     static let workingDirectory: URL = {

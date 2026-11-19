@@ -1,5 +1,5 @@
-import AppKit
 import PDFKit
+import SwiftUI
 import WebKit
 
 struct LoadedBook {
@@ -23,7 +23,7 @@ enum BookLoader {
         switch ext {
         case "epub":
             let book = try EPUBBook(file: url, bookID: id)
-            if needsCover, let src = book.coverURL, let image = NSImage(contentsOf: src) {
+            if needsCover, let src = book.coverURL, let image = PlatformImage.load(src) {
                 CoverRenderer.savePNG(image, to: coverURL)
             }
             return LoadedBook(url: url, bookID: id, kind: .epub, title: book.title, author: book.author,
@@ -31,7 +31,7 @@ enum BookLoader {
         case "pdf":
             guard let doc = PDFDocument(url: url), doc.pageCount > 0 else { throw BookError.unreadablePDF }
             if needsCover, let page = doc.page(at: 0) {
-                CoverRenderer.savePNG(page.thumbnail(of: NSSize(width: 400, height: 560), for: .cropBox), to: coverURL)
+                CoverRenderer.savePNG(page.thumbnail(of: CGSize(width: 400, height: 560), for: .cropBox), to: coverURL)
             }
             let attrs = doc.documentAttributes ?? [:]
             let title = (attrs[PDFDocumentAttribute.titleAttribute] as? String)?.collapsed.nilIfEmpty
@@ -90,7 +90,7 @@ final class ReaderModel {
     var pageIndex = 0
     var pendingAnchor: ReaderAnchor?
     var anchorToken = 0
-    var showChat = true
+    var showChat = Platform.hasClaude
     var sidebarTab: SidebarTab = .contents
     var showVideo = true
     var videoSeek = VideoSeek(time: 0, token: 0)

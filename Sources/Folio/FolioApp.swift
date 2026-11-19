@@ -3,17 +3,30 @@ import UniformTypeIdentifiers
 
 @main
 struct FolioApp: App {
+    #if os(macOS)
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
+    #endif
     @State private var app = AppModel.shared
 
     var body: some Scene {
+        #if os(macOS)
         Window("Folio", id: "main") {
             RootView()
                 .environment(app)
                 .frame(minWidth: 820, minHeight: 560)
         }
         .defaultSize(width: 1320, height: 860)
-        .commands {
+        .commands { menus }
+        #else
+        WindowGroup {
+            RootView()
+                .environment(app)
+        }
+        .commands { menus }
+        #endif
+    }
+
+    @CommandsBuilder private var menus: some Commands {
             CommandGroup(replacing: .newItem) {
                 Button("Open…") { app.presentOpenPanel() }.keyboardShortcut("o")
                 Button("Add YouTube Video…") {
@@ -92,10 +105,10 @@ struct FolioApp: App {
                 Button("Actual Size") { app.zoom(.reset) }
                     .keyboardShortcut("0", modifiers: .command)
             }
-        }
     }
 }
 
+#if os(macOS)
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func application(_ application: NSApplication, open urls: [URL]) {
         if let url = urls.first { MainActor.assumeIsolated { AppModel.shared.open(url) } }
@@ -113,6 +126,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 }
+#endif
 
 enum ZoomStep { case `in`, out, reset }
 
@@ -146,11 +160,25 @@ struct RootView: View {
                 ReaderView(reader: reader).id(reader.bookID)
                     .transition(.opacity)
             } else {
+                #if os(macOS)
                 HubView()
                     .transition(.opacity)
+                #else
+                // The tab picker lives in the navigation bar, which iPad only draws inside a stack.
+                NavigationStack {
+                    HubView().navigationBarTitleDisplayMode(.inline)
+                }
+                .transition(.opacity)
+                #endif
             }
         }
         .animation(.easeInOut(duration: 0.2), value: app.reader?.bookID)
+        .task {
+            // `-openBook <id>` on the command line opens straight into a book from the shelf.
+            guard let id = UserDefaults.standard.string(forKey: "openBook") else { return }
+            let shelf = LibraryStore.reconcile(app.library, open: nil)
+            if let item = shelf.first(where: { $0.id == id }) { app.open(item.url) }
+        }
         .overlay {
             if app.isLoading {
                 ProgressView().controlSize(.large)
@@ -180,12 +208,21 @@ final class AppModel {
     var isLoading = false
     var errorMessage: String?
 
+    static let bookTypes: [UTType] = [UTType(filenameExtension: "epub") ?? .data, .pdf]
+    /// Presents the system file picker on iPad.
+    var showImporter = false
+
     func presentOpenPanel() {
+        #if os(macOS)
         let panel = NSOpenPanel()
-        panel.allowedContentTypes = [UTType(filenameExtension: "epub") ?? .data, .pdf]
+        panel.allowedContentTypes = Self.bookTypes
         panel.allowsMultipleSelection = false
         panel.message = "Choose an EPUB or PDF to read"
         if panel.runModal() == .OK, let url = panel.url { open(url) }
+        #else
+        closeBook()
+        showImporter = true
+        #endif
     }
 
     func handleDrop(_ providers: [NSItemProvider]) -> Bool {
@@ -204,6 +241,9 @@ final class AppModel {
 
     /// Opens a book, optionally at a section saved by `ReaderModel.sectionKey`.
     func open(_ url: URL, section: String? = nil) {
+        // Files picked on iPad sit outside the sandbox and can only be seen while access is open.
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
         guard CloudStore.isPresent(url) else {
             errorMessage = "The file at \(url.path) no longer exists."
             library.removeAll { $0.path == url.path }

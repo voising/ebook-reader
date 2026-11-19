@@ -55,6 +55,7 @@ enum YouTube {
 
     // MARK: Import
 
+    #if os(macOS)
     static func importVideo(_ input: String, status: @escaping @Sendable (String) -> Void) async throws -> URL {
         guard let id = videoID(from: input) else { throw ImportError(message: "That doesn't look like a YouTube link.") }
         let out = epubURL(id)
@@ -298,12 +299,17 @@ enum YouTube {
     private final class DataBox: @unchecked Sendable {
         var data = Data()
     }
+    #else
+    static func importVideo(_ input: String, status: @escaping @Sendable (String) -> Void) async throws -> URL {
+        throw ImportError(message: "Videos are added in Folio on your Mac. They show up here through iCloud.")
+    }
+    #endif
 }
 
 // MARK: - Player
 
 /// The video, embedded above its transcript. Timestamp links in the text seek it.
-struct VideoPlayerView: NSViewRepresentable {
+struct VideoPlayerView: PlatformViewRepresentable {
     let videoID: String
     let seek: VideoSeek
 
@@ -313,11 +319,14 @@ struct VideoPlayerView: NSViewRepresentable {
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
-    func makeNSView(context: Context) -> WKWebView {
+    func makeView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
         config.mediaTypesRequiringUserActionForPlayback = []
+        #if os(iOS)
+        config.allowsInlineMediaPlayback = true
+        #endif
         let webView = WKWebView(frame: .zero, configuration: config)
-        webView.setValue(false, forKey: "drawsBackground")
+        webView.makeTransparent()
         context.coordinator.token = seek.token
         let html = """
         <!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -342,7 +351,7 @@ struct VideoPlayerView: NSViewRepresentable {
         return webView
     }
 
-    func updateNSView(_ webView: WKWebView, context: Context) {
+    func updateView(_ webView: WKWebView, context: Context) {
         guard context.coordinator.token != seek.token else { return }
         context.coordinator.token = seek.token
         webView.evaluateJavaScript("seek(\(seek.time))", completionHandler: nil)
@@ -401,10 +410,12 @@ struct AddVideoSheet: View {
         .frame(width: 460)
         .onAppear {
             focused = true
+            #if os(macOS)
             if link.isEmpty, let clip = NSPasteboard.general.string(forType: .string), YouTube.videoID(from: clip) != nil,
                clip.contains("youtu") {
                 link = clip.trimmingCharacters(in: .whitespacesAndNewlines)
             }
+            #endif
         }
     }
 

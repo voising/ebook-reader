@@ -148,7 +148,7 @@ final class WordStore {
 
     /// Defines every word that has no definition yet, one at a time.
     func fillMissing() {
-        guard fillTask == nil, !readOnly else { return }
+        guard Platform.hasClaude, fillTask == nil, !readOnly else { return }
         fillTask = Task { [weak self] in
             while let self, let next = self.words.first(where: { $0.definition == nil && $0.error == nil }) {
                 self.definingID = next.id
@@ -297,14 +297,15 @@ private struct WordCard: View {
                 }
             } else if let error = word.error {
                 HStack(spacing: 8) {
-                    Text("Couldn't get a definition.").font(.system(size: 12.5)).foregroundStyle(.secondary)
-                    Button("Retry", action: onRetry).controlSize(.small)
+                    Text(Platform.hasClaude ? "Couldn't get a definition." : "No definition yet. Retry it in Folio on your Mac.")
+                        .font(.system(size: 12.5)).foregroundStyle(.secondary)
+                    if Platform.hasClaude { Button("Retry", action: onRetry).controlSize(.small) }
                 }
                 .help(error)
             } else {
                 HStack(spacing: 8) {
                     if isDefining { ProgressView().controlSize(.small) }
-                    Text(isDefining ? "Looking it up…" : "Waiting for a definition…")
+                    Text(isDefining ? "Looking it up…" : Platform.hasClaude ? "Waiting for a definition…" : "Your Mac will add the definition.")
                         .font(.system(size: 12.5)).foregroundStyle(.secondary)
                 }
             }

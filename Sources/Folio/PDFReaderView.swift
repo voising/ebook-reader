@@ -1,12 +1,12 @@
 import PDFKit
 import SwiftUI
 
-struct PDFReaderView: NSViewRepresentable {
+struct PDFReaderView: PlatformViewRepresentable {
     let reader: ReaderModel
     let document: PDFDocument
     let theme: ThemeSnapshot
 
-    func makeNSView(context: Context) -> FolioPDFView {
+    func makeView(context: Context) -> FolioPDFView {
         let view = FolioPDFView()
         view.document = document
         view.autoScales = true
@@ -25,7 +25,7 @@ struct PDFReaderView: NSViewRepresentable {
         return view
     }
 
-    func updateNSView(_ view: FolioPDFView, context: Context) {
+    func updateView(_ view: FolioPDFView, context: Context) {
         if view.backgroundColor != theme.theme.background {
             view.backgroundColor = theme.theme.background
         }
@@ -34,16 +34,26 @@ struct PDFReaderView: NSViewRepresentable {
 
 final class FolioPDFView: PDFView {
     weak var reader: ReaderModel?
-    private var bar: NSHostingView<SelectionBar>?
+    private var bar: PlatformView?
+    #if os(iOS)
+    private var barHost: UIHostingController<SelectionBar>?
+    private weak var watchedScroll: UIScrollView?
+    private let tapDelegate = SimultaneousTapDelegate()
+    #endif
     private var pendingShow: DispatchWorkItem?
     private var activeHighlightID: String?
     /// Click count of the last mouse-down in this view; 2 means the selection is a double-clicked word.
     private var lastClickCount = 0
     private static let prefix = "folio:"
 
-    override init(frame: NSRect) {
+    override init(frame: CGRect) {
         super.init(frame: frame)
         NotificationCenter.default.addObserver(self, selector: #selector(selectionChanged), name: .PDFViewSelectionChanged, object: self)
+        #if os(iOS)
+        let tap = UITapGestureRecognizer(target: self, action: #selector(tapped(_:)))
+        tap.delegate = tapDelegate
+        addGestureRecognizer(tap)
+        #endif
     }
 
     required init?(coder: NSCoder) { fatalError() }
@@ -143,10 +153,16 @@ final class FolioPDFView: PDFView {
             if activeHighlightID == nil { hideBar() }
             return
         }
+        #if os(macOS)
         // Only a mouse selection highlights on its own; Select All or find results just get the bar.
         scheduleSelectionBar(autoHighlight: isOwnMouseEvent(NSApp.currentEvent))
+        #else
+        // Touch selections are adjusted with handles, so they only get the bar: highlighting is a tap on a colour.
+        scheduleSelectionBar(autoHighlight: false)
+        #endif
     }
 
+    #if os(macOS)
     /// True for a left-mouse event aimed at this view, as opposed to a menu or sidebar click that sets the selection.
     private func isOwnMouseEvent(_ event: NSEvent?) -> Bool {
         guard let event, let window, event.window === window else { return false }
@@ -156,11 +172,14 @@ final class FolioPDFView: PDFView {
         default: return false
         }
     }
+    #endif
 
     private func scheduleSelectionBar(autoHighlight: Bool) {
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
+            #if os(macOS)
             if NSEvent.pressedMouseButtons != 0 { self.scheduleSelectionBar(autoHighlight: autoHighlight); return }
+            #endif
             guard let sel = self.currentSelection, let page = sel.pages.first else { return }
             var rect = self.convert(sel.bounds(for: page), from: page)
             if let last = sel.pages.last, last != page { rect = rect.union(self.convert(sel.bounds(for: last), from: last)) }
@@ -182,19 +201,38 @@ final class FolioPDFView: PDFView {
                 self.activeHighlightID = id
                 self.showBar(above: rect, active: .yellow)
             } else {
-                self.showBar(above: rect, active: nil)
+                self.showBar(above: rect, active: nil, offerWord: words == 1)
             }
         }
         pendingShow = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: work)
+        // On touch the selection keeps changing while its handles are dragged, so wait for it to settle.
+        #if os(macOS)
+        let delay = 0.2
+        #else
+        let delay = 0.55
+        #endif
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
     }
 
-    private func showBar(above rect: NSRect, active: HighlightColor?, savedWord: String? = nil) {
+    /// Saves the selected word to the word list (the touch equivalent of double-clicking it).
+    private func saveSelectedWord() {
+        guard let sel = currentSelection, let page = sel.pages.first else { return }
+        let rect = convert(sel.bounds(for: page), from: page)
+        let around = sel.copy() as? PDFSelection
+        around?.extend(atStart: 140)
+        around?.extend(atEnd: 140)
+        if let saved = reader?.saveWord(sel.string ?? "", context: around?.string) {
+            showBar(above: rect, active: nil, savedWord: saved)
+        }
+    }
+
+    private func showBar(above rect: CGRect, active: HighlightColor?, savedWord: String? = nil, offerWord: Bool = false) {
         hideBar()
         let isMark = activeHighlightID != nil
-        let view = NSHostingView(rootView: SelectionBar(
+        let content = SelectionBar(
             activeColor: active,
             isExisting: isMark,
+            onSaveWord: offerWord && savedWord == nil ? { [weak self] in self?.saveSelectedWord() } : nil,
             onUndoWord: savedWord.map { word in { [weak self] in self?.reader?.undoSaveWord(word); self?.hideBar() } },
             onColor: { [weak self] c in
                 guard let self else { return }
@@ -219,7 +257,9 @@ final class FolioPDFView: PDFView {
                 if let id = self.activeHighlightID { self.reader?.removeHighlight(id) }
                 self.hideBar()
             }
-        ))
+        )
+        #if os(macOS)
+        let view = NSHostingView(rootView: content)
         let size = view.fittingSize
         var origin = NSPoint(x: rect.midX - size.width / 2, y: isFlipped ? rect.minY - size.height - 10 : rect.maxY + 10)
         let outOfTop = isFlipped ? origin.y < 4 : origin.y + size.height > bounds.height - 4
@@ -230,29 +270,80 @@ final class FolioPDFView: PDFView {
         addSubview(view)
         NSAnimationContext.runAnimationGroup { $0.duration = 0.12; view.animator().alphaValue = 1 }
         bar = view
+        #else
+        let host = UIHostingController(rootView: content)
+        host.safeAreaRegions = []
+        host.view.backgroundColor = .clear
+        let size = host.sizeThatFits(in: CGSize(width: bounds.width, height: 200))
+        // The system edit menu (Copy, Look Up…) sits above a selection, so the bar goes below it.
+        var origin = CGPoint(x: rect.midX - size.width / 2, y: rect.maxY + 14)
+        if origin.y + size.height > bounds.height - 8 { origin.y = rect.minY - size.height - 14 }
+        origin.x = max(8, min(origin.x, bounds.width - size.width - 8))
+        host.view.frame = CGRect(origin: origin, size: size)
+        host.view.alpha = 0
+        addSubview(host.view)
+        UIView.animate(withDuration: 0.12) { host.view.alpha = 1 }
+        bar = host.view
+        barHost = host
+        watchScrolling()
+        #endif
     }
 
     func hideBar() {
         bar?.removeFromSuperview()
         bar = nil
+        #if os(iOS)
+        barHost = nil
+        #endif
     }
 
+    /// The highlight under a point in this view, if any.
+    private func highlight(at point: CGPoint) -> (id: String, rect: CGRect)? {
+        guard let page = page(for: point, nearest: false) else { return nil }
+        let p = convert(point, to: page)
+        guard let hit = page.annotations.first(where: { ($0.userName ?? "").hasPrefix(Self.prefix) && $0.bounds.contains(p) }),
+              let id = hit.userName?.dropFirst(Self.prefix.count) else { return nil }
+        return (String(id), convert(hit.bounds, from: page))
+    }
+
+    private func focusHighlight(_ id: String, rect: CGRect) {
+        activeHighlightID = id
+        clearSelection()
+        showBar(above: rect, active: reader?.highlights.first { $0.id == id }?.color)
+    }
+
+    #if os(iOS)
+    @objc private func tapped(_ gesture: UITapGestureRecognizer) {
+        hideBar()
+        activeHighlightID = nil
+        if let hit = highlight(at: gesture.location(in: self)) { focusHighlight(hit.id, rect: hit.rect) }
+    }
+
+    /// Hides the bar as soon as the page is dragged.
+    private func watchScrolling() {
+        guard watchedScroll == nil else { return }
+        func find(_ view: UIView) -> UIScrollView? {
+            if let scroll = view as? UIScrollView { return scroll }
+            for sub in view.subviews { if let found = find(sub) { return found } }
+            return nil
+        }
+        guard let scroll = find(self) else { return }
+        scroll.panGestureRecognizer.addTarget(self, action: #selector(scrolled(_:)))
+        watchedScroll = scroll
+    }
+
+    @objc private func scrolled(_ gesture: UIPanGestureRecognizer) {
+        if gesture.state == .began, bar != nil { hideBar(); activeHighlightID = nil }
+    }
+    #else
     override func mouseDown(with event: NSEvent) {
         hideBar()
         activeHighlightID = nil
         lastClickCount = event.clickCount
-        let point = convert(event.locationInWindow, from: nil)
         // A double-click selects the word even inside a highlight, so it can be saved to the word list.
-        if event.clickCount < 2, let page = page(for: point, nearest: false) {
-            let p = convert(point, to: page)
-            if let hit = page.annotations.first(where: { ($0.userName ?? "").hasPrefix(Self.prefix) && $0.bounds.contains(p) }),
-               let id = hit.userName?.dropFirst(Self.prefix.count) {
-                activeHighlightID = String(id)
-                clearSelection()
-                let color = reader?.highlights.first { $0.id == String(id) }?.color
-                showBar(above: convert(hit.bounds, from: page), active: color)
-                return
-            }
+        if event.clickCount < 2, let hit = highlight(at: convert(event.locationInWindow, from: nil)) {
+            focusHighlight(hit.id, rect: hit.rect)
+            return
         }
         super.mouseDown(with: event)
     }
@@ -285,12 +376,22 @@ final class FolioPDFView: PDFView {
     }
 
     @objc private func menuAsk() { askAboutSelection() }
+    #endif
 }
+
+#if os(iOS)
+/// Lets the highlight tap run alongside PDFKit's own gestures.
+final class SimultaneousTapDelegate: NSObject, UIGestureRecognizerDelegate {
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+                           shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
+}
+#endif
 
 struct SelectionBar: View {
     var activeColor: HighlightColor?
     var isExisting: Bool
     /// Set when the selection is a word that was just saved to the word list.
+    var onSaveWord: (() -> Void)?
     var onUndoWord: (() -> Void)?
     var onColor: (HighlightColor) -> Void
     var onAsk: () -> Void
@@ -308,9 +409,14 @@ struct SelectionBar: View {
                 .help("Highlight \(c.label)")
             }
             Rectangle().fill(.white.opacity(0.18)).frame(width: 1, height: 16).padding(.horizontal, 2)
-            Button(action: onAsk) { Label("Ask Claude", systemImage: "sparkle").labelStyle(.titleAndIcon) }
-                .buttonStyle(BarButtonStyle())
+            if Platform.hasClaude {
+                Button(action: onAsk) { Label("Ask Claude", systemImage: "sparkle").labelStyle(.titleAndIcon) }
+                    .buttonStyle(BarButtonStyle())
+            }
             Button("Copy", action: onCopy).buttonStyle(BarButtonStyle())
+            if let onSaveWord {
+                Button("Save Word", action: onSaveWord).buttonStyle(BarButtonStyle())
+            }
             if let onUndoWord {
                 Rectangle().fill(.white.opacity(0.18)).frame(width: 1, height: 16).padding(.horizontal, 2)
                 Text("✓ Saved to Words").font(.system(size: 12.5, weight: .medium)).foregroundStyle(.white.opacity(0.62))

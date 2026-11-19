@@ -22,7 +22,7 @@ struct HubView: View {
         .toolbar {
             ToolbarItem(placement: .principal) {
                 Picker("", selection: $app.hubTab) {
-                    ForEach(HubTab.allCases) { tab in
+                    ForEach(HubTab.allCases.filter { Platform.hasClaude || $0 != .ask }) { tab in
                         Text(tab == .review && !app.hub.due.isEmpty ? "Review (\(app.hub.due.count))" : tab.rawValue).tag(tab)
                     }
                 }
@@ -32,6 +32,9 @@ struct HubView: View {
             }
         }
         .sheet(isPresented: $app.showAddVideo) { AddVideoSheet().environment(app) }
+        .fileImporter(isPresented: $app.showImporter, allowedContentTypes: AppModel.bookTypes) { result in
+            if case .success(let url) = result { app.open(url) }
+        }
         .onAppear { app.hub.reload(); app.syncLibrary() }
         .onReceive(NotificationCenter.default.publisher(for: Platform.didBecomeActive)) { _ in
             if app.hub.session == nil { app.hub.reload() }
@@ -58,10 +61,12 @@ struct LibraryView: View {
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
+                    #if os(macOS)
                     Button { app.showAddVideo = true } label: {
                         Label("Add Video…", systemImage: "play.rectangle").padding(.horizontal, 4)
                     }
                     .controlSize(.large)
+                    #endif
                     Button { app.presentOpenPanel() } label: {
                         Label("Open Book…", systemImage: "plus")
                             .padding(.horizontal, 4)
@@ -80,7 +85,9 @@ struct LibraryView: View {
                                 .onTapGesture { app.open(item.url) }
                                 .contextMenu {
                                     Button("Open") { app.open(item.url) }
+                                    #if os(macOS)
                                     Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([item.url]) }
+                                    #endif
                                     Divider()
                                     Button("Remove from Library", role: .destructive) { app.remove(item) }
                                 }
@@ -178,7 +185,7 @@ struct BookCover: View {
     let item: LibraryItem
 
     var body: some View {
-        if let image = NSImage(contentsOf: AppPaths.cover(for: item.id)) {
+        if let image = PlatformImage.load(AppPaths.cover(for: item.id)) {
             Image(platform: image).resizable().aspectRatio(contentMode: .fill)
         } else {
             placeholder

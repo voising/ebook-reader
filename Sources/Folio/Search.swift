@@ -230,8 +230,8 @@ struct SearchPanel: View {
             TextField("Search in book", text: $search.query)
                 .textFieldStyle(.plain)
                 .focused($focused)
-                .onSubmit { reader.findNext(!NSEvent.modifierFlags.contains(.shift)) }
-                .onExitCommand { search.query = "" }
+                .onSubmit { reader.findNext(!Platform.shiftIsDown) }
+                .onEscape { search.query = "" }
             if search.isSearching {
                 ProgressView().controlSize(.small)
             } else if !search.query.isEmpty {

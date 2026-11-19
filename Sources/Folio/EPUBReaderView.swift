@@ -1,7 +1,7 @@
 import SwiftUI
 import WebKit
 
-struct EPUBReaderView: NSViewRepresentable {
+struct EPUBReaderView: PlatformViewRepresentable {
     let reader: ReaderModel
     let chapterIndex: Int
     let anchorToken: Int
@@ -9,13 +9,16 @@ struct EPUBReaderView: NSViewRepresentable {
 
     func makeCoordinator() -> Coordinator { Coordinator(reader: reader, theme: theme) }
 
-    func makeNSView(context: Context) -> WKWebView {
+    func makeView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
+        #if os(iOS)
+        config.defaultWebpagePreferences.preferredContentMode = .mobile
+        #endif
         config.userContentController.add(WeakMessageHandler(context.coordinator), name: "folio")
         context.coordinator.installScripts(on: config.userContentController)
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.isInspectable = true
-        webView.setValue(false, forKey: "drawsBackground")
+        webView.makeTransparent()
         webView.underPageBackgroundColor = theme.theme.background
         webView.navigationDelegate = context.coordinator
         context.coordinator.webView = webView
@@ -24,7 +27,7 @@ struct EPUBReaderView: NSViewRepresentable {
         return webView
     }
 
-    func updateNSView(_ webView: WKWebView, context: Context) {
+    func updateView(_ webView: WKWebView, context: Context) {
         let c = context.coordinator
         if c.theme != theme {
             c.theme = theme
@@ -65,7 +68,7 @@ struct EPUBReaderView: NSViewRepresentable {
             guard let epub = reader.epub, let webView, epub.spine.indices.contains(index) else { return }
             loadedIndex = index
             anchorToken = token
-            webView.alphaValue = 0
+            webView.setOpacity(0)
             webView.loadFileURL(epub.spine[index], allowingReadAccessTo: epub.root)
         }
 
@@ -98,14 +101,13 @@ struct EPUBReaderView: NSViewRepresentable {
             webView.evaluateJavaScript("folio.load(\(highlights)); folio.setNext(\(nextTitle)); \(reader.searchMarkScript)") { [weak self] _, _ in
                 guard let self else { return }
                 self.applyAnchor(smooth: false)
+                #if os(macOS)
                 if self.isFirstLoad || !(webView.window?.firstResponder is NSTextView) {
                     webView.window?.makeFirstResponder(webView)
                 }
+                #endif
                 self.isFirstLoad = false
-                NSAnimationContext.runAnimationGroup { ctx in
-                    ctx.duration = 0.18
-                    webView.animator().alphaValue = 1
-                }
+                webView.setOpacity(1, animated: true)
             }
         }
 
@@ -134,7 +136,7 @@ struct EPUBReaderView: NSViewRepresentable {
             if reader.videoID != nil, let seconds = YouTube.timestamp(in: url) {
                 reader.seekVideo(seconds)
             } else {
-                NSWorkspace.shared.open(url)
+                Platform.open(url)
             }
             decisionHandler(.cancel)
         }

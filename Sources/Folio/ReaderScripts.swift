@@ -97,6 +97,9 @@ enum ReaderScripts {
       if (window.folio) return;
       const post = (m) => { try { window.webkit.messageHandlers.folio.postMessage(m); } catch (e) {} };
       const COLORS = ['yellow', 'green', 'blue', 'pink', 'purple'];
+      // Set by the app before this runs: touch = iPad (no mouse gestures), claude = the Ask button makes sense here.
+      const ENV = window.folioEnv || {};
+      const TOUCH = !!ENV.touch;
 
       function textNodes() {
         const out = [];
@@ -214,8 +217,12 @@ enum ReaderScripts {
           b.appendChild(s);
         });
         b.appendChild(sep());
-        b.appendChild(btn('act', '✦ Ask Claude', 'Ask Claude about this passage', onAsk));
+        if (ENV.claude !== false) b.appendChild(btn('act', '✦ Ask Claude', 'Ask Claude about this passage', onAsk));
         b.appendChild(btn('act', 'Copy', 'Copy', onCopy));
+        // Touch has no double-click, so a selected word gets an explicit button.
+        if (TOUCH && mode === 'select' && pending && savedWord !== pending.text && cleanWord(pending.text)) {
+          b.appendChild(btn('act', 'Save Word', 'Add it to Words', onSaveWord));
+        }
         if (mode === 'select' && pending && savedWord === pending.text) {
           b.appendChild(sep());
           const n = document.createElement('span'); n.className = 'note'; n.textContent = '✓ Saved to Words';
@@ -225,8 +232,10 @@ enum ReaderScripts {
         if (mode === 'mark') b.appendChild(btn('act danger', 'Remove', 'Remove highlight', onRemove));
         b.style.display = 'flex';
         const bw = b.offsetWidth, bh = b.offsetHeight;
-        let top = rect.top - bh - 10;
+        // On touch the system menu (Copy, Look Up…) sits above the selection, so the bar goes below it.
+        let top = TOUCH ? rect.bottom + 14 : rect.top - bh - 10;
         if (top < 8) top = rect.bottom + 10;
+        if (top + bh > window.innerHeight - 8) top = rect.top - bh - 14;
         let left = rect.left + rect.width / 2 - bw / 2;
         left = Math.max(8, Math.min(left, window.innerWidth - bw - 8));
         b.style.top = top + 'px';
@@ -255,6 +264,13 @@ enum ReaderScripts {
         while (s > 0 && !/[.!?…]/.test(text[s - 1]) && at - s < 240) s--;
         while (e < text.length && !/[.!?…]/.test(text[e]) && e - at < 240) e++;
         return text.slice(s, Math.min(e + 1, text.length)).replace(/\s+/g, ' ').trim();
+      }
+      function onSaveWord() {
+        const w = pending && cleanWord(pending.text);
+        if (!w) return;
+        post({ type: 'word', text: w, context: sentenceAround(pending.range) });
+        savedWord = pending.text;
+        showBar(pending.rect, null);
       }
       function onUndoWord() {
         const w = savedWord && cleanWord(savedWord);
@@ -305,7 +321,7 @@ enum ReaderScripts {
 
       document.addEventListener('mousedown', (e) => { if (bar && !bar.contains(e.target)) hideBar(); });
       document.addEventListener('mouseup', (e) => {
-        if (bar && bar.contains(e.target)) return;
+        if (TOUCH || (bar && bar.contains(e.target))) return;
         if (e.button !== 0 || e.ctrlKey) return;
         setTimeout(() => {
           const p = captureSelection();
@@ -325,7 +341,7 @@ enum ReaderScripts {
       // Double-clicking a word saves it to the word list. The mouseup above shows the bar; whichever of the
       // two runs first, the bar ends up showing the confirmation.
       document.addEventListener('dblclick', (e) => {
-        if (e.button !== 0 || e.ctrlKey || (bar && bar.contains(e.target))) return;
+        if (TOUCH || e.button !== 0 || e.ctrlKey || (bar && bar.contains(e.target))) return;
         const p = captureSelection();
         const w = p && cleanWord(p.text);
         if (!w) return;
@@ -333,6 +349,25 @@ enum ReaderScripts {
         savedWord = p.text;
         if (mode === 'select' && pending && pending.text === p.text) showBar(pending.rect, null);
       });
+
+      if (TOUCH) {
+        // A touch selection keeps changing while its handles are dragged: show the bar once it settles.
+        // Nothing is highlighted until a colour is tapped.
+        let settle = null;
+        document.addEventListener('selectionchange', () => {
+          clearTimeout(settle);
+          settle = setTimeout(() => {
+            const p = captureSelection();
+            if (p) { mode = 'select'; pending = p; savedWord = null; showBar(p.rect, null); }
+            else if (mode === 'select') hideBar();
+          }, 550);
+        });
+        document.addEventListener('click', (e) => {
+          if (bar && bar.contains(e.target)) return;
+          const m = e.target && e.target.closest ? e.target.closest('mark.folio-hl') : null;
+          if (m) focusMark(m.getAttribute('data-id'));
+        });
+      }
 
       let scrollTimer = null;
       window.addEventListener('scroll', () => {
@@ -430,10 +465,22 @@ enum ReaderScripts {
 
     /// Runs at document start: installs the stylesheet and theme variables before first paint.
     static func bootstrap(theme: ThemeSnapshot) -> String {
+        #if os(macOS)
+        let touch = false
+        #else
+        let touch = true
+        #endif
         let cssJSON = jsonString(css)
         let varsJSON = (try? String(data: JSONSerialization.data(withJSONObject: theme.vars), encoding: .utf8)) ?? "{}"
         return """
         (function () {
+          window.folioEnv = { touch: \(touch), claude: \(Platform.hasClaude) };
+          if (window.folioEnv.touch) {
+            var meta = document.createElement('meta');
+            meta.name = 'viewport';
+            meta.content = 'width=device-width, initial-scale=1';
+            document.documentElement.appendChild(meta);
+          }
           var vars = \(varsJSON);
           for (var k in vars) document.documentElement.style.setProperty(k, vars[k]);
           var s = document.createElement('style');
