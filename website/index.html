@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Folio — a reader that helps you remember what you read</title>
+  <meta name="description" content="Folio is a reader for Mac and iPad. It opens EPUBs, PDFs, web articles and video transcripts, and turns what you highlight into concept maps, flashcards and a word list that come back before you forget them.">
+  <meta property="og:title" content="Folio — a reader that helps you remember what you read">
+  <meta property="og:description" content="Read EPUBs, PDFs, articles and video transcripts. Highlight, ask, listen, and review what matters on a spaced schedule.">
+  <meta property="og:image" content="assets/reader.png">
+  <meta name="theme-color" content="#F7F6F3">
+  <link rel="icon" href="assets/favicon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400;1,6..72,500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="ambient" aria-hidden="true"></div>
+
+  <header class="nav">
+    <div class="wrap nav-row">
+      <a class="brand" href="#top" aria-label="Folio, back to top">
+        <img src="assets/icon.png" width="28" height="28" alt="">
+        <span>Folio</span>
+      </a>
+      <nav class="nav-links" aria-label="Sections">
+        <a href="#reading">Reading</a>
+        <a href="#study">Study</a>
+        <a href="#screens">Screens</a>
+        <a href="#questions">Questions</a>
+      </nav>
+      <a class="btn btn-small" href="#availability">Availability</a>
+    </div>
+  </header>
+
+  <main id="top">
+    <!-- Hero -->
+    <section class="hero wrap">
+      <div class="hero-copy">
+        <span class="tag tag-yellow reveal">For Mac and iPad</span>
+        <h1 class="reveal" style="--index:1">A reader that helps you <em>remember</em> what you read.</h1>
+        <p class="lede reveal" style="--index:2">Folio opens your EPUBs, PDFs, web articles and video transcripts. What you highlight becomes concept maps, flashcards and a word list, and it all comes back for review just before you would have forgotten it.</p>
+        <div class="hero-actions reveal" style="--index:3">
+          <a class="btn" href="#reading">See how it works</a>
+          <a class="link-quiet" href="#availability">Not released yet <span aria-hidden="true">&rarr;</span></a>
+        </div>
+        <ul class="formats reveal" style="--index:4" aria-label="What Folio opens">
+          <li>EPUB</li><li>PDF</li><li>Web articles</li><li>YouTube transcripts</li>
+        </ul>
+      </div>
+
+      <div class="hero-art reveal" style="--index:2">
+        <figure class="device">
+          <img src="assets/reader.png" width="1200" height="1600" alt="Folio on iPad showing the first chapter of Alice's Adventures in Wonderland with three passages highlighted in yellow and green.">
+        </figure>
+        <!-- The definition card that appears on double-click, drawn in HTML -->
+        <aside class="lookup" aria-label="Example of the definition card">
+          <div class="lookup-head">
+            <strong>waistcoat</strong><i>noun</i>
+            <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10v4h3l5 4V6L7 10H4z"/><path d="M16 9a4 4 0 0 1 0 6M18.5 6.5a8 8 0 0 1 0 11"/></svg>
+          </div>
+          <p>A sleeveless garment worn over a shirt and under a jacket; a vest.</p>
+          <p class="lookup-eg">He tucked the ticket into his waistcoat.</p>
+          <span class="lookup-saved"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Saved to Words</span>
+        </aside>
+      </div>
+    </section>
+
+    <!-- Reading: bento grid -->
+    <section id="reading" class="section wrap">
+      <header class="section-head reveal">
+        <span class="eyebrow">Reading</span>
+        <h2>Everything you do with a pencil, and a few things you can't.</h2>
+      </header>
+
+      <div class="bento">
+        <article class="card span-4 reveal">
+          <div class="card-copy">
+            <h3>Select it and it's highlighted</h3>
+            <p>Drag across a passage and it is marked in yellow straight away. Four more colours sit on the bar above it, and every highlight lands in the sidebar with its chapter, ready to copy out as Markdown.</p>
+          </div>
+          <div class="vignette paper">
+            <div class="swatches" aria-hidden="true">
+              <i style="background:#FFCC29"></i><i style="background:#5CC773"></i><i style="background:#4D99FF"></i><i style="background:#FF6B94"></i><i style="background:#B37AF5"></i>
+              <span class="swatch-sep"></span><b>Ask Claude</b><b>Copy</b><b class="danger">Remove</b>
+            </div>
+            <p class="prose">In another moment down went Alice after it, <mark class="hl-y">never once considering how in the world she was to get out again</mark>. The rabbit-hole went straight on like a tunnel for some way, and then <mark class="hl-g">dipped suddenly down</mark>.</p>
+          </div>
+        </article>
+
+        <article class="card span-2 reveal" style="--index:1">
+          <div class="card-copy">
+            <h3>Double-click a word</h3>
+            <p>The dictionary entry appears beside it at once. A few seconds later Claude adds what the word means in that sentence, and the word is kept in your list.</p>
+          </div>
+          <div class="vignette keys">
+            <span class="prose small">…out of its <mark class="sel">waistcoat</mark>-pocket…</span>
+            <span class="arrow" aria-hidden="true"></span>
+            <span class="mini-card"><strong>waistcoat</strong> <i>noun</i><br>A sleeveless garment worn under a jacket.</span>
+          </div>
+        </article>
+
+        <article class="card span-2 reveal">
+          <div class="card-copy">
+            <h3>Words that come back</h3>
+            <p>Each saved word becomes a flashcard with its meaning and the sentence you found it in. You grade yourself; Folio decides when you see it next.</p>
+          </div>
+          <div class="vignette flash">
+            <div class="flash-card">
+              <small>Words · Walden</small>
+              <strong>deliberately</strong>
+              <hr>
+              <p>(adverb) Slowly and on purpose, with full attention.</p>
+            </div>
+            <div class="grades" aria-hidden="true">
+              <span>Again<i>10 min</i></span><span>Hard<i>1 day</i></span><span class="on">Good<i>3 days</i></span><span>Easy<i>6 days</i></span>
+            </div>
+          </div>
+        </article>
+
+        <article class="card span-4 reveal" style="--index:1">
+          <div class="card-copy">
+            <h3>Listen to the chapter</h3>
+            <p>Press the headphones and Folio reads from where you are, moving a highlight along with the sentence being spoken. The built-in voice works offline; add your own OpenAI key for a more natural one.</p>
+          </div>
+          <div class="vignette paper">
+            <p class="prose listen-text">The rabbit-hole went straight on like a tunnel for some way, and then dipped suddenly down. <span>Either the well was very deep, or she fell very slowly,</span> <span>for she had plenty of time as she went down to look about her</span> <span>and to wonder what was going to happen next.</span></p>
+            <div class="listen-bar" aria-hidden="true">
+              <svg class="ico fill" viewBox="0 0 24 24"><path d="M11 6v12L3 12zM21 6v12l-8-6z"/></svg>
+              <svg class="ico fill big" viewBox="0 0 24 24"><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/></svg>
+              <svg class="ico fill" viewBox="0 0 24 24"><path d="M13 6v12l8-6zM3 6v12l8-6z"/></svg>
+              <span class="listen-meta"><b>Part 6 of 41</b><i>System voice</i></span>
+              <span class="listen-speed">1.15&times;</span>
+            </div>
+          </div>
+        </article>
+
+        <article class="card span-3 reveal">
+          <div class="card-copy">
+            <h3>Ask about the page you're on</h3>
+            <p>Claude reads the current chapter along with your question, so the answer is about this book and not the internet's idea of it. Select a passage to ask about that passage only.</p>
+          </div>
+          <div class="vignette chat">
+            <p class="bubble me">Why doesn't the fall frighten her?</p>
+            <p class="bubble">Carroll slows it down. Alice has time to look at the shelves, read a jar's label and put it back, so the fall reads like a tour, not an accident.</p>
+          </div>
+        </article>
+
+        <article class="card span-3 reveal" style="--index:1">
+          <div class="card-copy">
+            <h3>Articles and videos become books</h3>
+            <p>Paste a link. An article is stripped down to its text and pictures; a YouTube video becomes its transcript with the player alongside. Both can be highlighted, mapped and quizzed like anything else on the shelf.</p>
+          </div>
+          <div class="vignette link">
+            <div class="field"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg><span>en.wikipedia.org/wiki/Spaced_repetition</span></div>
+            <ul class="steps">
+              <li><span class="tag tag-green">Done</span>Loading the page</li>
+              <li><span class="tag tag-green">Done</span>Building the article</li>
+              <li><span class="tag tag-blue">On the shelf</span>Spaced repetition · 4,100 words</li>
+            </ul>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <!-- Study -->
+    <section id="study" class="section wrap study">
+      <div class="study-copy">
+        <header class="section-head reveal">
+          <span class="eyebrow">Study</span>
+          <h2>Four ways into a chapter.</h2>
+          <p>Reading something once is not the same as knowing it. Each chapter has a study panel that asks a little more of you every time.</p>
+        </header>
+        <ol class="ways">
+          <li class="reveal"><span class="num">01</span><div><h3>Primer</h3><p>Before you read: what the chapter covers, the questions to read for, and the terms it assumes you know.</p></div></li>
+          <li class="reveal" style="--index:1"><span class="num">02</span><div><h3>Map</h3><p>The chapter's ideas as a diagram you can drag around, with a line for every connection between them.</p></div></li>
+          <li class="reveal" style="--index:2"><span class="num">03</span><div><h3>Explain Back</h3><p>Write what you understood in your own words. You get a score, what you got, and what you missed.</p></div></li>
+          <li class="reveal" style="--index:3"><span class="num">04</span><div><h3>Cards</h3><p>Flashcards drawn from the chapter and from your highlights, scheduled so the hard ones return sooner.</p></div></li>
+        </ol>
+        <p class="aside reveal">Across the whole library there is one review queue, a chat that can search every book you own, and a map of the ideas that link them.</p>
+      </div>
+      <figure class="device study-art reveal" style="--index:1">
+        <img src="assets/primer.png" width="1200" height="1600" loading="lazy" alt="The Primer tab for a chapter: a short overview, three questions to read for, what the chapter assumes you know, and key terms.">
+      </figure>
+    </section>
+
+    <!-- Screens -->
+    <section id="screens" class="section wrap">
+      <header class="section-head center reveal">
+        <span class="eyebrow">Screens</span>
+        <h2>Quiet on purpose.</h2>
+        <p>The page is the interface. Everything else stays out of the way until you reach for it.</p>
+      </header>
+      <div class="gallery">
+        <figure class="reveal">
+          <div class="device"><img src="assets/library.png" width="1200" height="1600" loading="lazy" alt="The library: five books on a shelf, each with a cover and a progress bar."></div>
+          <figcaption><b>Library</b> Books, articles and videos on one shelf.</figcaption>
+        </figure>
+        <figure class="reveal raised" style="--index:1">
+          <div class="device"><img src="assets/words.png" width="1200" height="1600" loading="lazy" alt="The Words tab: six saved words, each on a card with its part of speech, definition, example and the sentence it came from."></div>
+          <figcaption><b>Words</b> Every word you looked up, with the sentence it came from.</figcaption>
+        </figure>
+        <figure class="reveal" style="--index:2">
+          <div class="device"><img src="assets/review.png" width="1200" height="1600" loading="lazy" alt="The Review tab: nine cards due, with counts for reviewed today, day streak and cards in total."></div>
+          <figcaption><b>Review</b> What is due today, across everything you read.</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <!-- Sync + shortcuts -->
+    <section class="section wrap duo">
+      <article class="card flat reveal">
+        <span class="eyebrow">Sync</span>
+        <h2 class="h2-small">Your library lives in your iCloud.</h2>
+        <p>Books, highlights, notes, flashcards and words travel between your Mac and your iPad through your own iCloud storage. There is no Folio account and no Folio server in between.</p>
+        <ul class="ticks">
+          <li><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Pick up on the iPad at the page you left on the Mac</li>
+          <li><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Changes made on two devices are merged, not overwritten</li>
+          <li><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>A book shows up on the other shelf with its cover, and downloads when you open it</li>
+          <li><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Without iCloud, everything simply stays on the device</li>
+        </ul>
+      </article>
+      <article class="card flat reveal" style="--index:1">
+        <span class="eyebrow">Keyboard</span>
+        <h2 class="h2-small">Hands on the keys.</h2>
+        <dl class="shortcuts">
+          <div><dt><kbd>&#8984;</kbd><kbd>+</kbd> <kbd>&#8984;</kbd><kbd>&minus;</kbd></dt><dd>Zoom the page or the text</dd></div>
+          <div><dt><kbd>&#8679;</kbd><kbd>&#8984;</kbd><kbd>H</kbd></dt><dd>Highlight the selection</dd></div>
+          <div><dt><kbd>&#8984;</kbd><kbd>J</kbd></dt><dd>Ask Claude</dd></div>
+          <div><dt><kbd>&#8997;</kbd><kbd>&#8984;</kbd><kbd>P</kbd></dt><dd>Listen to the chapter</dd></div>
+          <div><dt><kbd>&#8984;</kbd><kbd>F</kbd></dt><dd>Find in the book</dd></div>
+          <div><dt><kbd>&#8679;</kbd><kbd>&#8984;</kbd><kbd>R</kbd></dt><dd>Review due cards</dd></div>
+        </dl>
+      </article>
+    </section>
+
+    <!-- Questions -->
+    <section id="questions" class="section wrap narrow">
+      <header class="section-head reveal">
+        <span class="eyebrow">Questions</span>
+        <h2>The honest details.</h2>
+      </header>
+      <div class="faq reveal">
+        <details open>
+          <summary>What can Folio open?</summary>
+          <p>EPUB and PDF files, any web article you paste a link to, and YouTube videos, which arrive as a transcript with the player above it. Importing a video happens on the Mac and needs the free <code>yt-dlp</code> tool installed.</p>
+        </details>
+        <details>
+          <summary>Where does the AI come from?</summary>
+          <p>From Claude, through Claude Code installed on your Mac. Folio has no AI account of its own and adds no subscription. On the iPad you read, highlight, listen and review; the maps, primers, cards and definitions your Mac made arrive there through iCloud.</p>
+        </details>
+        <details>
+          <summary>Where is my data?</summary>
+          <p>In your own iCloud storage, in a folder that belongs to the app, and on your devices. Nothing is sent to a Folio server, because there isn't one.</p>
+        </details>
+        <details>
+          <summary>Does listening cost anything?</summary>
+          <p>Not with the built-in system voice, which also works offline. If you add an OpenAI key for the more natural voice, the text being read is sent to OpenAI and they bill your account for the audio. Passages you have already heard are kept on the device, so replaying them is free.</p>
+        </details>
+        <details>
+          <summary>Does it work without Claude?</summary>
+          <p>Yes, as a reader. Highlights, notes, the word list with dictionary definitions, search, listening, articles and review all work on their own. The chat and the generated study material are what need Claude.</p>
+        </details>
+      </div>
+    </section>
+
+    <!-- Availability -->
+    <section id="availability" class="section wrap narrow closing">
+      <img class="closing-icon reveal" src="assets/icon.png" width="72" height="72" alt="">
+      <h2 class="reveal" style="--index:1">Folio isn't released yet.</h2>
+      <p class="reveal" style="--index:2">It runs on macOS 14 and iPadOS 17 or later, and it is still being built. When there is a version to download, this is where it will be.</p>
+      <div class="hero-actions center reveal" style="--index:3">
+        <span class="btn btn-disabled" aria-disabled="true">Download for Mac</span>
+        <span class="btn btn-ghost btn-disabled" aria-disabled="true">Get it for iPad</span>
+      </div>
+      <span class="tag tag-yellow reveal" style="--index:4">In development</span>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="wrap footer-row">
+      <span class="brand"><img src="assets/icon.png" width="22" height="22" alt=""><span>Folio</span></span>
+      <span class="footer-note">Made for people who underline.</span>
+      <a href="#top">Back to top</a>
+    </div>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>
