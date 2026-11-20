@@ -62,12 +62,23 @@ extension WordFile: CloudMergeable {
     mutating func merge(_ other: WordFile) {
         for theirs in other.words {
             if let i = words.firstIndex(where: { $0.word.caseInsensitiveCompare(theirs.word) == .orderedSame }) {
-                if words[i].definition == nil, theirs.definition != nil { words[i] = theirs }
+                if words[i].definition == nil, theirs.definition != nil {
+                    let mine = words[i].review
+                    words[i] = theirs
+                    words[i].review = theirs.review ?? mine
+                }
+                // The copy reviewed more recently keeps its schedule.
+                if let card = theirs.review, (card.lastReviewed ?? .distantPast) > (words[i].review?.lastReviewed ?? .distantPast) {
+                    words[i].review = card
+                }
             } else {
                 words.append(theirs)
             }
         }
         words.sort { $0.addedAt > $1.addedAt }
+        let seen = Set((reviews ?? []).map { "\($0.cardID)|\($0.date.timeIntervalSince1970)" })
+        let new = (other.reviews ?? []).filter { !seen.contains("\($0.cardID)|\($0.date.timeIntervalSince1970)") }
+        if !new.isEmpty { reviews = ((reviews ?? []) + new).sorted { $0.date < $1.date } }
     }
 }
 

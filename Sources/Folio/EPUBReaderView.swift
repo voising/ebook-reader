@@ -157,7 +157,13 @@ struct EPUBReaderView: PlatformViewRepresentable {
             case "recolor": reader.recolor(id, to: color)
             case "remove": reader.removeHighlight(id)
             case "ask": reader.ask(about: text)
-            case "word": reader.saveWord(text, context: body["context"] as? String)
+            case "word":
+                var anchor: CGRect?
+                if let r = body["rect"] as? [String: NSNumber], let x = r["x"], let y = r["y"], let w = r["w"], let h = r["h"] {
+                    anchor = CGRect(x: x.doubleValue, y: y.doubleValue, width: w.doubleValue, height: h.doubleValue)
+                }
+                reader.saveWord(text, context: body["context"] as? String, anchor: anchor)
+            case "lookupEnd": reader.lookup = nil
             case "unword": reader.undoSaveWord(text)
             case "copy":
                 Platform.copy(text)

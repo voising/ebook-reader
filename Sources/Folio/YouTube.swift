@@ -360,7 +360,17 @@ struct VideoPlayerView: PlatformViewRepresentable {
 
 // MARK: - Add sheet
 
-struct AddVideoSheet: View {
+/// Adds something from the web to the library: an article from any site, or a YouTube video's transcript.
+struct AddLinkSheet: View {
+    /// A YouTube link (or bare video id) imports the video; any other web link imports the article.
+    static func isVideo(_ link: String) -> Bool {
+        let text = link.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard YouTube.videoID(from: text) != nil else { return false }
+        return text.lowercased().contains("youtu") || !text.contains(".")
+    }
+
+    static func isValid(_ link: String) -> Bool { isVideo(link) || Articles.link(from: link) != nil }
+
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
     @State private var link = ""
@@ -371,12 +381,14 @@ struct AddVideoSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Add a YouTube Video").font(.system(size: 18, weight: .semibold, design: .serif))
-            Text("Folio imports the transcript so you can read, highlight, map and quiz yourself on a video the same way as a book, with the player alongside.")
+            Text("Add a Link").font(.system(size: 18, weight: .semibold, design: .serif))
+            Text(Platform.hasClaude
+                 ? "Paste a link to an article or a YouTube video. Folio turns the article, or the video's transcript, into something you can read, highlight and study like a book."
+                 : "Paste a link to an article. Folio turns it into something you can read and highlight like a book. Videos are added from your Mac.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            TextField("https://www.youtube.com/watch?v=…", text: $link)
+            TextField("https://…", text: $link)
                 .textFieldStyle(.roundedBorder)
                 .focused($focused)
                 .disabled(status != nil)
@@ -403,7 +415,7 @@ struct AddVideoSheet: View {
                 .keyboardShortcut(.cancelAction)
                 Button("Add", action: start)
                     .keyboardShortcut(.defaultAction)
-                    .disabled(status != nil || YouTube.videoID(from: link) == nil)
+                    .disabled(status != nil || !Self.isValid(link))
             }
         }
         .padding(22)
@@ -411,23 +423,29 @@ struct AddVideoSheet: View {
         .onAppear {
             focused = true
             #if os(macOS)
-            if link.isEmpty, let clip = NSPasteboard.general.string(forType: .string), YouTube.videoID(from: clip) != nil,
-               clip.contains("youtu") {
-                link = clip.trimmingCharacters(in: .whitespacesAndNewlines)
+            // A link already on the clipboard is almost always the one being added.
+            if link.isEmpty, let clip = NSPasteboard.general.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines),
+               clip.hasPrefix("http"), Self.isValid(clip) {
+                link = clip
             }
             #endif
         }
     }
 
     private func start() {
-        guard status == nil, YouTube.videoID(from: link) != nil else { return }
+        guard status == nil, Self.isValid(link) else { return }
         error = nil
         status = "Starting…"
         let input = link
         task = Task {
             do {
-                let url = try await YouTube.importVideo(input) { message in
-                    Task { @MainActor in if status != nil { status = message } }
+                let url: URL
+                if Self.isVideo(input) {
+                    url = try await YouTube.importVideo(input) { message in
+                        Task { @MainActor in if status != nil { status = message } }
+                    }
+                } else {
+                    url = try await Articles.importArticle(input) { message in if status != nil { status = message } }
                 }
                 guard !Task.isCancelled else { return }
                 status = nil

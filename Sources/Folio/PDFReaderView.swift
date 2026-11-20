@@ -45,6 +45,10 @@ final class FolioPDFView: PDFView {
     private var activeHighlightID: String?
     /// Click count of the last mouse-down in this view; 2 means the selection is a double-clicked word.
     private var lastClickCount = 0
+    /// True from a mouse-down in this view until the button comes back up. While the button is held, PDFKit
+    /// keeps reporting the selection on timer ticks as well as on drags, so the kind of event in flight says
+    /// nothing reliable about where a selection came from; this flag does.
+    private var isMouseSelecting = false
     private static let prefix = "folio:"
 
     override init(frame: CGRect) {
@@ -174,24 +178,12 @@ final class FolioPDFView: PDFView {
         }
         #if os(macOS)
         // Only a mouse selection highlights on its own; Select All or find results just get the bar.
-        scheduleSelectionBar(autoHighlight: isOwnMouseEvent(NSApp.currentEvent))
+        scheduleSelectionBar(autoHighlight: isMouseSelecting)
         #else
         // Touch selections are adjusted with handles, so they only get the bar: highlighting is a tap on a colour.
         scheduleSelectionBar(autoHighlight: false)
         #endif
     }
-
-    #if os(macOS)
-    /// True for a left-mouse event aimed at this view, as opposed to a menu or sidebar click that sets the selection.
-    private func isOwnMouseEvent(_ event: NSEvent?) -> Bool {
-        guard let event, let window, event.window === window else { return false }
-        switch event.type {
-        case .leftMouseDragged: return true
-        case .leftMouseDown, .leftMouseUp: return bounds.contains(convert(event.locationInWindow, from: nil))
-        default: return false
-        }
-    }
-    #endif
 
     private func scheduleSelectionBar(autoHighlight: Bool) {
         let work = DispatchWorkItem { [weak self] in
@@ -211,7 +203,7 @@ final class FolioPDFView: PDFView {
                 let around = sel.copy() as? PDFSelection
                 around?.extend(atStart: 140)
                 around?.extend(atEnd: 140)
-                if let saved = self.reader?.saveWord(sel.string ?? "", context: around?.string) {
+                if let saved = self.reader?.saveWord(sel.string ?? "", context: around?.string, anchor: self.paneRect(rect)) {
                     self.showBar(above: rect, active: nil, savedWord: saved)
                     return
                 }
@@ -240,13 +232,23 @@ final class FolioPDFView: PDFView {
         let around = sel.copy() as? PDFSelection
         around?.extend(atStart: 140)
         around?.extend(atEnd: 140)
-        if let saved = reader?.saveWord(sel.string ?? "", context: around?.string) {
+        if let saved = reader?.saveWord(sel.string ?? "", context: around?.string, anchor: paneRect(rect)) {
             showBar(above: rect, active: nil, savedWord: saved)
         }
     }
 
+    /// A rect of this view measured from the top-left corner, which is how SwiftUI overlays place things.
+    private func paneRect(_ rect: CGRect) -> CGRect {
+        #if os(macOS)
+        isFlipped ? rect : CGRect(x: rect.minX, y: bounds.height - rect.maxY, width: rect.width, height: rect.height)
+        #else
+        rect
+        #endif
+    }
+
     private func showBar(above rect: CGRect, active: HighlightColor?, savedWord: String? = nil, offerWord: Bool = false) {
-        hideBar()
+        // A bar that confirms a saved word keeps that word's definition card open.
+        hideBar(keepLookup: savedWord != nil)
         let isMark = activeHighlightID != nil
         let content = SelectionBar(
             activeColor: active,
@@ -308,7 +310,8 @@ final class FolioPDFView: PDFView {
         #endif
     }
 
-    func hideBar() {
+    func hideBar(keepLookup: Bool = false) {
+        if !keepLookup, reader?.lookup != nil { reader?.lookup = nil }
         bar?.removeFromSuperview()
         bar = nil
         #if os(iOS)
@@ -364,7 +367,15 @@ final class FolioPDFView: PDFView {
             focusHighlight(hit.id, rect: hit.rect)
             return
         }
+        isMouseSelecting = true
+        // PDFKit tracks the whole drag inside this call, so the button is normally up when it returns.
         super.mouseDown(with: event)
+        if NSEvent.pressedMouseButtons & 1 == 0 { isMouseSelecting = false }
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        super.mouseUp(with: event)
+        isMouseSelecting = false
     }
 
     override func scrollWheel(with event: NSEvent) {

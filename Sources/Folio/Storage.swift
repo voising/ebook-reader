@@ -231,11 +231,16 @@ enum CloudStore {
         let flag = "migratedToContainer.books.v1"
         guard backing == .container, !UserDefaults.standard.bool(forKey: flag) else { return }
         let fm = FileManager.default
-        for item in library where fm.fileExists(atPath: item.path) {
+        var complete = true
+        for item in library {
             guard let dest = bookFile(id: item.id, kind: item.kind), !isPresent(dest) else { continue }
-            try? fm.copyItem(at: URL(fileURLWithPath: item.path), to: dest)
+            // A book that can't be read yet (say, folder access was refused) is tried again next launch.
+            guard fm.isReadableFile(atPath: item.path), (try? fm.copyItem(at: URL(fileURLWithPath: item.path), to: dest)) != nil else {
+                if fm.fileExists(atPath: item.path) { complete = false }
+                continue
+            }
         }
-        UserDefaults.standard.set(true, forKey: flag)
+        if complete { UserDefaults.standard.set(true, forKey: flag) }
     }
 
     private static func copyMissing(from source: URL, to dest: URL, ext: String) {

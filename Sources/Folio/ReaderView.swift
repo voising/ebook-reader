@@ -6,6 +6,7 @@ struct ReaderView: View {
     @Environment(\.colorScheme) private var scheme
     @State private var settings = ReaderSettings.shared
     @State private var showAppearance = false
+    @State private var paneSize = CGSize.zero
     @State private var columns: NavigationSplitViewVisibility = .detailOnly
 
     private var theme: ThemeSnapshot { settings.snapshot(scheme) }
@@ -25,12 +26,21 @@ struct ReaderView: View {
                 }
                 ZStack {
                     content
+                        .onGeometryChange(for: CGSize.self) { $0.size } action: { paneSize = $0 }
+                        .overlay(alignment: lookupBelow ? .topLeading : .bottomLeading) { lookupCard }
                     if reader.study.tab != nil {
                         StudyPanel(reader: reader, study: reader.study)
                             .transition(.opacity)
                     }
                 }
                 .animation(.easeOut(duration: 0.15), value: reader.study.tab != nil)
+                .overlay(alignment: .bottom) {
+                    if reader.listen.isVisible {
+                        ListenBar(listen: reader.listen).padding(.bottom, 14).padding(.horizontal, 16)
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                    }
+                }
+                .animation(.easeOut(duration: 0.2), value: reader.listen.isVisible)
                 footer
             }
             .background(Color(platform: theme.theme.background))
@@ -56,8 +66,35 @@ struct ReaderView: View {
         .onReceive(NotificationCenter.default.publisher(for: Platform.willStop)) { _ in
             reader.flush()
         }
-        .onDisappear { reader.flush() }
+        .onDisappear {
+            reader.flush()
+            reader.listen.stop()
+        }
         .onChange(of: reader.search.focusToken) { if columns == .detailOnly { withAnimation { columns = .all } } }
+    }
+
+    /// Where the definition card for a double-clicked word goes: just clear of the word and its selection
+    /// bar. The bar sits above the word on the Mac and below it on iPad; the card takes the other side
+    /// unless there is no room there. Only the card itself takes clicks, so the page stays usable around it.
+    private var lookupBelow: Bool {
+        guard let lookup = reader.lookup else { return true }
+        return lookup.anchor.maxY + Self.lookupGap.below + 190 < paneSize.height
+    }
+
+    #if os(macOS)
+    private static let lookupGap = (below: 10.0, above: 64.0)
+    #else
+    private static let lookupGap = (below: 76.0, above: 60.0)
+    #endif
+
+    @ViewBuilder private var lookupCard: some View {
+        if let lookup = reader.lookup {
+            LookupCard(lookup: lookup, store: app.words) { reader.lookup = nil }
+                .offset(x: max(12, min(lookup.anchor.midX - 160, paneSize.width - 332)),
+                        y: lookupBelow ? lookup.anchor.maxY + Self.lookupGap.below
+                                       : -(paneSize.height - lookup.anchor.minY + Self.lookupGap.above))
+                .transition(.opacity)
+        }
     }
 
     @ViewBuilder private var content: some View {
@@ -145,6 +182,10 @@ struct ReaderView: View {
                 }
                 .help("Show or hide the video")
             }
+            Button { reader.listen.toggle() } label: {
+                Label("Listen", systemImage: reader.listen.isActive ? "headphones.circle.fill" : "headphones")
+            }
+            .help("Read this chapter aloud (⌥⌘P)")
             Button { showAppearance.toggle() } label: { Label("Appearance", systemImage: "textformat.size") }
                 .help("Appearance")
                 .popover(isPresented: $showAppearance, arrowEdge: .bottom) {

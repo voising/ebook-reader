@@ -81,6 +81,7 @@ final class ReaderModel {
     let chat: ChatModel
     let search: BookSearch
     let study: StudyModel
+    let listen = ListenModel()
     /// Set for transcripts imported from YouTube.
     let videoID: String?
 
@@ -96,6 +97,8 @@ final class ReaderModel {
     var videoSeek = VideoSeek(time: 0, token: 0)
     /// True when the synced record exists but couldn't be read; nothing is written until it can be.
     private(set) var saveBlocked = false
+    /// The word whose definition card is showing.
+    var lookup: WordLookup?
 
     @ObservationIgnored weak var webView: WKWebView?
     @ObservationIgnored weak var pdfView: FolioPDFView?
@@ -142,6 +145,7 @@ final class ReaderModel {
         chat.restore(study.data.chat)
         chat.onPersist = { [weak self] stored in self?.study.saveChat(stored) }
         study.reader = self
+        listen.reader = self
         search.onUpdate = { [weak self] in self?.searchDidUpdate() }
     }
 
@@ -204,6 +208,9 @@ final class ReaderModel {
 
     func goToChapter(_ index: Int, anchor: ReaderAnchor = .top) {
         guard let epub, epub.spine.indices.contains(index) else { return }
+        lookup = nil
+        // The audio belongs to the chapter being left.
+        if index != chapterIndex { listen.stop() }
         pendingAnchor = anchor
         anchorToken += 1
         if index != chapterIndex { chapterFraction = 0 }
@@ -287,12 +294,17 @@ final class ReaderModel {
 
     /// Saves a double-clicked word to the library-wide list. Returns the cleaned word, or nil if nothing was saved.
     @discardableResult
-    func saveWord(_ raw: String, context: String?) -> String? {
+    func saveWord(_ raw: String, context: String?, anchor: CGRect? = nil) -> String? {
         let source = [title, currentChapterTitle].filter { !$0.isEmpty }.joined(separator: " · ")
-        return AppModel.shared.words.add(raw, context: context, bookID: bookID, source: source)
+        let saved = AppModel.shared.words.add(raw, context: context, bookID: bookID, source: source)
+        if let saved, let anchor { lookup = WordLookup(word: saved, anchor: anchor) }
+        return saved
     }
 
-    func undoSaveWord(_ raw: String) { AppModel.shared.words.undoAdd(raw) }
+    func undoSaveWord(_ raw: String) {
+        AppModel.shared.words.undoAdd(raw)
+        lookup = nil
+    }
 
     func highlightSelection(_ color: HighlightColor = .yellow) {
         if kind == .epub { js("folio.highlightSelection('\(color.rawValue)')") } else { pdfView?.highlightSelection(color) }
@@ -386,6 +398,8 @@ final class ReaderModel {
         if kind == .pdf {
             pdfView?.reinstallAnnotations(record.highlights)
         } else {
+            // Reloading the page drops the marks Listen follows the text with.
+            listen.stop()
             anchorToken += 1
             pendingAnchor = .fraction(chapterFraction)
             webView?.reload()

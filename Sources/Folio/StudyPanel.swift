@@ -567,11 +567,17 @@ struct ReviewSessionView: View {
                 if !item.source.isEmpty {
                     Text(item.source).font(.system(size: 10.5, weight: .medium)).foregroundStyle(.tertiary).lineLimit(1)
                 }
-                Text(item.card.front)
-                    .font(.system(size: 20, weight: .medium, design: .serif))
-                    .lineSpacing(3)
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    Text(item.card.front)
+                        .font(.system(size: 20, weight: .medium, design: .serif))
+                        .lineSpacing(3)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if item.bookID == WordStore.reviewID {
+                        Button { AppModel.shared.words.speak(word: item.card.front) } label: { Image(systemName: "speaker.wave.2.fill") }
+                            .buttonStyle(.plain).foregroundStyle(.secondary).help("Hear it")
+                    }
+                }
                 if revealed {
                     Divider()
                     Text(item.card.back)

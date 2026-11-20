@@ -50,6 +50,7 @@ enum ReaderScripts {
     mark.folio-hl.flash { animation: folio-flash 1.4s ease; }
     ::highlight(folio-find) { background-color: rgb(255 204 41 / 0.35); }
     ::highlight(folio-find-current) { background-color: rgb(255 149 0 / 0.7); }
+    ::highlight(folio-listen) { background-color: color-mix(in srgb, var(--folio-link) 30%, transparent); }
     @keyframes folio-flash { 0%, 100% { box-shadow: 0 0 0 0 transparent; } 30% { box-shadow: 0 0 0 4px rgb(255 204 41 / 0.55); } }
 
     #folio-bar {
@@ -246,8 +247,11 @@ enum ReaderScripts {
         if (!bar) return;
         bar.classList.remove('show');
         bar.style.display = 'none';
+        // The definition card follows the bar: when one goes, so does the other.
+        if (savedWord) post({ type: 'lookupEnd' });
         mode = null; pending = null; target = null; savedWord = null;
       }
+      function rectOf(r) { return { x: r.left, y: r.top, w: r.width, h: r.height }; }
       function cleanWord(t) {
         const w = t.trim().replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '');
         return w && w.length <= 40 && !/\s/.test(w) && /\p{L}/u.test(w) ? w : null;
@@ -268,7 +272,7 @@ enum ReaderScripts {
       function onSaveWord() {
         const w = pending && cleanWord(pending.text);
         if (!w) return;
-        post({ type: 'word', text: w, context: sentenceAround(pending.range) });
+        post({ type: 'word', text: w, context: sentenceAround(pending.range), rect: rectOf(pending.rect) });
         savedWord = pending.text;
         showBar(pending.rect, null);
       }
@@ -345,7 +349,7 @@ enum ReaderScripts {
         const p = captureSelection();
         const w = p && cleanWord(p.text);
         if (!w) return;
-        post({ type: 'word', text: w, context: sentenceAround(p.range) });
+        post({ type: 'word', text: w, context: sentenceAround(p.range), rect: rectOf(p.rect) });
         savedWord = p.text;
         if (mode === 'select' && pending && pending.text === p.text) showBar(pending.rect, null);
       });
@@ -358,6 +362,8 @@ enum ReaderScripts {
           clearTimeout(settle);
           settle = setTimeout(() => {
             const p = captureSelection();
+            if (p && savedWord === p.text) return;
+            if (savedWord) post({ type: 'lookupEnd' });
             if (p) { mode = 'select'; pending = p; savedWord = null; showBar(p.rect, null); }
             else if (mode === 'select') hideBar();
           }, 550);
@@ -386,7 +392,57 @@ enum ReaderScripts {
         else if (e.key === 'Escape') hideBar();
       });
 
+      // Listen mode: the page's text blocks, and a highlight that follows the sentence being read.
+      let listenBlocks = [];
+      const LISTEN = 'p, li, h1, h2, h3, h4, h5, h6, blockquote, pre, dd, dt, figcaption, td, th';
+      function collectListenBlocks() {
+        listenBlocks = [];
+        const texts = [];
+        if (!document.body) return texts;
+        document.body.querySelectorAll(LISTEN).forEach((el) => {
+          if (el.querySelector(LISTEN)) return; // the innermost blocks only
+          const parts = []; let text = '';
+          const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+          let n;
+          while ((n = w.nextNode())) {
+            // Transcript timestamps are links to the video, not prose.
+            if (n.parentNode.closest && n.parentNode.closest('a.ts, script, style, rt')) continue;
+            parts.push({ node: n, start: text.length });
+            text += n.data;
+          }
+          if (text.trim().length < 2) return;
+          listenBlocks.push({ el, parts });
+          texts.push(text);
+        });
+        return texts;
+      }
+
       window.folio = {
+        listenStart() {
+          const texts = collectListenBlocks();
+          const first = listenBlocks.findIndex((b) => b.el.getBoundingClientRect().bottom > 60);
+          return JSON.stringify({ first: Math.max(first, 0), texts });
+        },
+        listenAt(i, s, e) {
+          const b = listenBlocks[i];
+          if (!b || !b.parts.length) return;
+          const at = (pos) => {
+            let p = b.parts[0];
+            for (const q of b.parts) { if (q.start <= pos) p = q; else break; }
+            return [p.node, Math.max(0, Math.min(pos - p.start, p.node.data.length))];
+          };
+          const r = document.createRange();
+          try { const a = at(s), z = at(e); r.setStart(a[0], a[1]); r.setEnd(z[0], z[1]); } catch (err) { return; }
+          if (canMark) CSS.highlights.set('folio-listen', new Highlight(r));
+          const box = r.getBoundingClientRect();
+          if (box.top < 70 || box.bottom > window.innerHeight - 150) {
+            window.scrollTo({ top: Math.max(0, window.scrollY + box.top - window.innerHeight * 0.3), behavior: 'smooth' });
+          }
+        },
+        listenClear() {
+          if (canMark) CSS.highlights.delete('folio-listen');
+          listenBlocks = [];
+        },
         load(list) { list.forEach(wrap); },
         apply(h) { wrap(h); flash(h.id); },
         focus(id) { focusMark(id); },

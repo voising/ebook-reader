@@ -29,9 +29,9 @@ struct FolioApp: App {
     @CommandsBuilder private var menus: some Commands {
             CommandGroup(replacing: .newItem) {
                 Button("Open…") { app.presentOpenPanel() }.keyboardShortcut("o")
-                Button("Add YouTube Video…") {
+                Button("Add Link…") {
                     app.closeBook()
-                    app.showAddVideo = true
+                    app.showAddLink = true
                 }
                 .keyboardShortcut("y", modifiers: [.command, .shift])
                 Button("Show Library") { app.closeBook() }
@@ -96,6 +96,10 @@ struct FolioApp: App {
                     .disabled(app.reader == nil)
                 Button("Show Note") { app.reader?.sidebarTab = .notes }
                     .keyboardShortcut("n", modifiers: [.command, .option])
+                    .disabled(app.reader == nil)
+                Divider()
+                Button(app.reader?.listen.isActive == true ? "Stop Listening" : "Listen to Chapter") { app.reader?.listen.toggle() }
+                    .keyboardShortcut("p", modifiers: [.command, .option])
                     .disabled(app.reader == nil)
                 Divider()
                 Button("Zoom In") { app.zoom(.in) }
@@ -176,6 +180,12 @@ struct RootView: View {
         }
         .animation(.easeInOut(duration: 0.2), value: app.reader?.bookID)
         .task {
+            // `-addLink <url>` on the command line imports an article and opens it.
+            if let link = UserDefaults.standard.string(forKey: "addLink"),
+               let url = try? await Articles.importArticle(link, status: { _ in }) {
+                app.open(url)
+                return
+            }
             // `-openBook <id>` on the command line opens straight into a book from the shelf.
             guard let id = UserDefaults.standard.string(forKey: "openBook") else { return }
             let shelf = LibraryStore.reconcile(app.library, open: nil)
@@ -200,17 +210,24 @@ struct RootView: View {
 final class AppModel {
     static let shared = AppModel()
 
-    #if os(macOS)
-    /// Runs before the stores below read anything, so they start from the migrated data.
-    @ObservationIgnored private let migrated: Void = CloudStore.migrateData()
-    #endif
-    var library: [LibraryItem] = LibraryStore.load()
+    var library: [LibraryItem]
     var reader: ReaderModel?
-    let hub = StudyHub()
-    let words = WordStore()
+    let words: WordStore
+    let hub: StudyHub
+
+    init() {
+        #if os(macOS)
+        // Before the stores read anything, so they start from the migrated data.
+        CloudStore.migrateData()
+        #endif
+        library = LibraryStore.load()
+        words = WordStore()
+        hub = StudyHub(words: words)
+    }
+
     /// `-hubTab Review` on the command line opens straight to a tab.
     var hubTab: HubTab = UserDefaults.standard.string(forKey: "hubTab").flatMap(HubTab.init(rawValue:)) ?? .library
-    var showAddVideo = false
+    var showAddLink = false
     var isLoading = false
     var errorMessage: String?
 
@@ -257,6 +274,7 @@ final class AppModel {
             return
         }
         reader?.flush()
+        reader?.listen.stop()
         isLoading = true
         Task {
             defer { isLoading = false }
@@ -286,6 +304,7 @@ final class AppModel {
         guard reader != nil else { return }
         reader?.flush()
         reader?.chat.stop()
+        reader?.listen.stop()
         reader = nil
         hub.reload()
     }

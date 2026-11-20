@@ -19,10 +19,24 @@ struct VocabWord: Codable, Identifiable, Hashable {
     var example: String?
     /// Why the last attempt to define it failed; cleared by Retry.
     var error: String?
+    /// The word's flashcard in the review queue, made once it has a definition. Shares the word's id.
+    var review: Flashcard?
+
+    /// Builds the flashcard: the word on the front, its meaning and your sentence on the back.
+    func makeCard() -> Flashcard? {
+        guard let definition else { return nil }
+        var back = partOfSpeech.map { "(\($0)) " + definition } ?? definition
+        if let example { back += "\n\ne.g. " + example }
+        var card = Flashcard(front: word, back: back, quote: context, sectionTitle: source)
+        card.id = id
+        return card
+    }
 }
 
 struct WordFile: Codable {
     var words: [VocabWord]
+    /// Reviews of word cards, for the "reviewed today" count and the streak.
+    var reviews: [ReviewLog]?
 }
 
 private struct WordEntry: Decodable {
@@ -34,7 +48,11 @@ private struct WordEntry: Decodable {
 /// The library-wide word list, stored next to the other study data as `Learn/_words.json`.
 @Observable @MainActor
 final class WordStore {
+    /// The source id word cards carry in the review queue (books use their book id).
+    static let reviewID = "_words"
+
     private(set) var words: [VocabWord] = []
+    private(set) var reviews: [ReviewLog] = []
     /// The word Claude is defining right now.
     private(set) var definingID: String?
     private(set) var readOnly = false
@@ -55,7 +73,16 @@ final class WordStore {
     /// reads wait for those saves, so this never drops something made on this device.
     func reload() {
         switch CloudStore.readSynced(WordFile.self, at: url) {
-        case .value(let file): words = file.words; readOnly = false
+        case .value(let file):
+            words = file.words
+            reviews = file.reviews ?? []
+            readOnly = false
+            // Words defined before cards existed get theirs now.
+            var added = false
+            for i in words.indices where words[i].review == nil {
+                if let card = words[i].makeCard() { words[i].review = card; added = true }
+            }
+            if added { save() }
         case .missing: readOnly = false
         case .unreadable: readOnly = true
         }
@@ -63,7 +90,30 @@ final class WordStore {
 
     private func save() {
         guard !readOnly else { return }
-        CloudStore.write(WordFile(words: words), to: url)
+        CloudStore.write(WordFile(words: words, reviews: reviews.isEmpty ? nil : reviews), to: url)
+    }
+
+    // MARK: Review
+
+    /// Every defined word as a card for the library-wide review queue.
+    var reviewItems: [ReviewItem] {
+        words.compactMap { word in
+            word.review.map { ReviewItem(card: $0, bookID: Self.reviewID, source: ["Words", word.source].compactMap { $0 }.joined(separator: " · ")) }
+        }
+    }
+
+    func grade(_ cardID: String, _ grade: ReviewGrade) {
+        reload()
+        guard !readOnly, let i = words.firstIndex(where: { $0.id == cardID }), var card = words[i].review else { return }
+        card.apply(grade)
+        words[i].review = card
+        reviews.append(ReviewLog(date: Date(), cardID: cardID, grade: grade.rawValue))
+        if reviews.count > 3000 { reviews.removeFirst(reviews.count - 3000) }
+        save()
+    }
+
+    func entry(for word: String) -> VocabWord? {
+        words.first { $0.word.caseInsensitiveCompare(word) == .orderedSame }
     }
 
     // MARK: Adding and removing
@@ -115,11 +165,11 @@ final class WordStore {
 
     // MARK: Definitions
 
-    /// Waits a few seconds after the last double-click, so an undone word never reaches Claude.
+    /// Waits a moment after the double-click, so a word undone straight away never reaches Claude.
     private func scheduleFill() {
         fillTimer?.cancel()
         fillTimer = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(4))
+            try? await Task.sleep(for: .milliseconds(1200))
             guard !Task.isCancelled else { return }
             self?.fillMissing()
         }
@@ -151,6 +201,7 @@ final class WordStore {
                     self.words[i].definition = definition
                     self.words[i].partOfSpeech = entry?.partOfSpeech?.collapsed.nilIfEmpty
                     self.words[i].example = entry?.example?.collapsed.nilIfEmpty
+                    if self.words[i].review == nil { self.words[i].review = self.words[i].makeCard() }
                 } else {
                     self.words[i].error = failure ?? "Claude didn't return a definition."
                 }
@@ -181,16 +232,21 @@ final class WordStore {
 
     // MARK: Speech
 
-    private static func voiceLanguage(for text: String) -> String {
+    static func voiceLanguage(for text: String) -> String {
         let code = NLLanguageRecognizer.dominantLanguage(for: text)?.rawValue ?? "en"
         let regional = ["en": "en-US", "fr": "fr-FR", "es": "es-ES", "de": "de-DE", "it": "it-IT", "pt": "pt-PT", "nl": "nl-NL"]
         return regional[code] ?? code
     }
 
-    func speak(_ word: VocabWord) {
+    func speak(_ word: VocabWord) { speak(word.word, language: word.language) }
+
+    /// Says a word by its text alone (used from review cards, which only carry the word).
+    func speak(word text: String) { speak(text, language: entry(for: text)?.language) }
+
+    private func speak(_ text: String, language: String?) {
         synthesizer.stopSpeaking(at: .immediate)
-        let utterance = AVSpeechUtterance(string: word.word)
-        let language = word.language ?? "en-US"
+        let utterance = AVSpeechUtterance(string: text)
+        let language = language ?? "en-US"
         utterance.voice = AVSpeechSynthesisVoice(language: language)
             ?? AVSpeechSynthesisVoice.speechVoices().first { $0.language.hasPrefix(String(language.prefix(2))) }
         utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 0.85
@@ -320,5 +376,90 @@ private struct WordCard: View {
             Divider()
             Button("Remove from Words", role: .destructive, action: onRemove)
         }
+    }
+}
+
+// MARK: - Looking a word up while reading
+
+/// The word just double-clicked in the reader, and where it sits in the reading pane.
+struct WordLookup: Equatable {
+    let word: String
+    /// The word's frame in the reading pane, measured from its top-left corner.
+    let anchor: CGRect
+}
+
+enum SystemDictionary {
+    /// The built-in macOS dictionary's entry for a word, trimmed to its opening senses. Nil on iPad.
+    static func define(_ word: String) -> String? {
+        #if os(macOS)
+        let range = CFRange(location: 0, length: (word as NSString).length)
+        guard let raw = DCSCopyTextDefinition(nil, word as CFString, range)?.takeRetainedValue() as String? else { return nil }
+        // Entries read "headword | pronunciation | part of speech senses… DERIVATIVES… ORIGIN…".
+        var text = raw
+        let parts = raw.components(separatedBy: " | ")
+        if parts.count >= 3 { text = parts[0] + " · " + parts[2...].joined(separator: " | ") }
+        for marker in [" DERIVATIVES ", " ORIGIN ", " PHRASES ", " PHRASAL VERBS "] {
+            if let cut = text.range(of: marker) { text = String(text[..<cut.lowerBound]) }
+        }
+        text = text.collapsed
+        guard text.count > 300 else { return text.nilIfEmpty }
+        let head = text.prefix(300)
+        return String(head[..<(head.lastIndex(of: " ") ?? head.endIndex)]) + "…"
+        #else
+        return nil
+        #endif
+    }
+}
+
+/// The card that appears next to a double-clicked word: the dictionary's entry at once, then what
+/// Claude says it means in this sentence.
+struct LookupCard: View {
+    let lookup: WordLookup
+    @Bindable var store: WordStore
+    let onClose: () -> Void
+    @State private var dictionary: String?
+
+    var body: some View {
+        let entry = store.entry(for: lookup.word)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(lookup.word).font(.system(size: 18, weight: .semibold, design: .serif)).lineLimit(1)
+                if let part = entry?.partOfSpeech {
+                    Text(part).font(.system(size: 12, design: .serif)).italic().foregroundStyle(.secondary).lineLimit(1)
+                }
+                Spacer(minLength: 4)
+                Button { store.speak(word: lookup.word) } label: { Image(systemName: "speaker.wave.2.fill") }
+                    .buttonStyle(.plain).foregroundStyle(.secondary).help("Hear it")
+                Button(action: onClose) { Image(systemName: "xmark") }
+                    .buttonStyle(.plain).foregroundStyle(.tertiary).help("Close")
+            }
+            if let definition = entry?.definition {
+                Text(definition).font(.system(size: 13.5)).fixedSize(horizontal: false, vertical: true)
+                if let example = entry?.example {
+                    Text(example).font(.system(size: 12.5)).italic().foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            } else {
+                if let dictionary {
+                    Text(dictionary).font(.system(size: 13)).fixedSize(horizontal: false, vertical: true)
+                }
+                if entry?.error != nil {
+                    Text("Claude couldn't define it. Retry from the Words tab.").font(.system(size: 11.5)).foregroundStyle(.secondary)
+                } else if Platform.hasClaude {
+                    HStack(spacing: 7) {
+                        ProgressView().controlSize(.small)
+                        Text("Asking Claude what it means here…").font(.system(size: 11.5)).foregroundStyle(.secondary)
+                    }
+                } else {
+                    Text("Saved to Words. Your Mac will add the definition.").font(.system(size: 11.5)).foregroundStyle(.secondary)
+                }
+            }
+        }
+        .padding(14)
+        .frame(width: 320, alignment: .leading)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(.quaternary))
+        .shadow(color: .black.opacity(0.22), radius: 16, y: 8)
+        .task(id: lookup.word) { dictionary = SystemDictionary.define(lookup.word) }
     }
 }

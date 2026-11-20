@@ -16,12 +16,15 @@ final class StudyHub {
     var linkError: String?
     var session: [ReviewItem]?
     let chat = ChatModel(scope: .library)
+    /// Saved words join the same review queue as the books' cards.
+    let words: WordStore
 
     @ObservationIgnored private var libraryLoaded = false
     @ObservationIgnored private var libraryWritable = true
     @ObservationIgnored private var indexTask: Task<Void, Never>?
 
-    init() {
+    init(words: WordStore) {
+        self.words = words
         chat.onPersist = { [weak self] stored in
             guard let self else { return }
             self.library.chat = stored
@@ -38,6 +41,7 @@ final class StudyHub {
             return nil
         }
         .sorted { ($0.title ?? "") < ($1.title ?? "") }
+        words.reload()
 
         if !libraryLoaded {
             libraryLoaded = true
@@ -61,8 +65,11 @@ final class StudyHub {
     var allCards: [ReviewItem] {
         books.flatMap { book in
             (book.cards ?? []).map { ReviewItem(card: $0, bookID: book.bookID, source: [book.title, $0.sectionTitle].compactMap { $0 }.joined(separator: " · ")) }
-        }
+        } + words.reviewItems
     }
+
+    /// Every review ever logged, for books and words alike.
+    private var allReviews: [ReviewLog] { books.flatMap { $0.reviews ?? [] } + words.reviews }
 
     var due: [ReviewItem] {
         let now = Date()
@@ -76,6 +83,7 @@ final class StudyHub {
     }
 
     func grade(_ item: ReviewItem, _ grade: ReviewGrade) {
+        if item.bookID == WordStore.reviewID { words.grade(item.card.id, grade); return }
         guard let i = books.firstIndex(where: { $0.bookID == item.bookID }) else { return }
         // Re-read first so a review never writes over changes made elsewhere since the hub loaded.
         if case .value(let fresh) = CloudStore.readSynced(LearnData.self, at: CloudStore.learnURL(item.bookID)) { books[i] = fresh }
@@ -87,13 +95,13 @@ final class StudyHub {
 
     var reviewedToday: Int {
         let start = Calendar.current.startOfDay(for: Date())
-        return books.reduce(0) { $0 + ($1.reviews ?? []).filter { $0.date >= start }.count }
+        return allReviews.filter { $0.date >= start }.count
     }
 
     /// Consecutive days, ending today or yesterday, with at least one review.
     var streak: Int {
         let cal = Calendar.current
-        let days = Set(books.flatMap { ($0.reviews ?? []).map { cal.startOfDay(for: $0.date) } })
+        let days = Set(allReviews.map { cal.startOfDay(for: $0.date) })
         var day = cal.startOfDay(for: Date())
         if !days.contains(day) { day = cal.date(byAdding: .day, value: -1, to: day) ?? day }
         var count = 0

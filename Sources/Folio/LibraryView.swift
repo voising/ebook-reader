@@ -31,7 +31,7 @@ struct HubView: View {
                 .fixedSize()
             }
         }
-        .sheet(isPresented: $app.showAddVideo) { AddVideoSheet().environment(app) }
+        .sheet(isPresented: $app.showAddLink) { AddLinkSheet().environment(app) }
         .fileImporter(isPresented: $app.showImporter, allowedContentTypes: AppModel.bookTypes) { result in
             if case .success(let url) = result { app.open(url) }
         }
@@ -62,12 +62,10 @@ struct LibraryView: View {
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
-                    #if os(macOS)
-                    Button { app.showAddVideo = true } label: {
-                        Label("Add Video…", systemImage: "play.rectangle").padding(.horizontal, 4)
+                    Button { app.showAddLink = true } label: {
+                        Label("Add Link…", systemImage: "link").padding(.horizontal, 4)
                     }
                     .controlSize(.large)
-                    #endif
                     Button { app.presentOpenPanel() } label: {
                         Label("Open Book…", systemImage: "plus")
                             .padding(.horizontal, 4)

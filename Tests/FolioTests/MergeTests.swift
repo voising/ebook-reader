@@ -55,3 +55,36 @@ final class MergeTests: XCTestCase {
         XCTAssertEqual(a.words.first { $0.word.lowercased() == "treacle" }?.definition, "syrup")
     }
 }
+
+final class WordListTests: XCTestCase {
+    /// The list saved before word cards existed must still load, or the store would turn read-only.
+    func testDecodesListSavedBeforeReviewCards() throws {
+        let json = """
+        {"words":[{"id":"1","word":"treacle","addedAt":"2026-11-19T10:01:00Z","language":"en-US","partOfSpeech":"noun",
+          "definition":"A thick syrup.","example":"Warm treacle.","context":"They lived on treacle.","source":"Alice · Tea"},
+         {"id":"2","word":"mauve","addedAt":"2026-11-19T10:02:00Z"}]}
+        """
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let file = try decoder.decode(WordFile.self, from: Data(json.utf8))
+        XCTAssertEqual(file.words.count, 2)
+        XCTAssertNil(file.words[0].review)
+        let card = try XCTUnwrap(file.words[0].makeCard())
+        XCTAssertEqual(card.id, "1", "the card shares the word's id, so two devices make the same card")
+        XCTAssertEqual(card.front, "treacle")
+        XCTAssertTrue(card.back.contains("(noun) A thick syrup."))
+        XCTAssertNil(file.words[1].makeCard(), "no card until the word has a definition")
+    }
+
+    func testConflictKeepsTheLaterReview() {
+        var mine = VocabWord(word: "treacle")
+        mine.definition = "syrup"
+        mine.review = mine.makeCard()
+        var theirs = mine
+        theirs.review?.apply(.good)
+        var file = WordFile(words: [mine])
+        file.merge(WordFile(words: [theirs], reviews: [ReviewLog(date: Date(), cardID: mine.id, grade: 3)]))
+        XCTAssertNotNil(file.words[0].review?.lastReviewed)
+        XCTAssertEqual(file.reviews?.count, 1)
+    }
+}
