@@ -317,6 +317,7 @@ mark { color: inherit; padding: 1px 0; border-radius: 2px; }
 .footer .brand img { border-radius: 5px; }
 .footer-note { font: italic 400 15px var(--serif); }
 .footer a { margin-left: auto; text-decoration: none; border-bottom: 1px solid var(--line); }
+.footer a + a { margin-left: 0; }
 .footer a:hover { color: var(--ink); }
 
 /* ---------- iPad: hands-free demos ---------- */
