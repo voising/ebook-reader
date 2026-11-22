@@ -40,6 +40,9 @@ final class FolioPDFView: PDFView {
     private var barHost: UIHostingController<SelectionBar>?
     private weak var watchedScroll: UIScrollView?
     private let tapDelegate = SimultaneousTapDelegate()
+    private var pageDown: PageDownTap?
+    /// The zoom set by the last fit-to-text, to tell whether the view is still fitted (a pinch undoes it).
+    private var textFitScale: CGFloat?
     #endif
     private var pendingShow: DispatchWorkItem?
     private var activeHighlightID: String?
@@ -49,6 +52,9 @@ final class FolioPDFView: PDFView {
     /// keeps reporting the selection on timer ticks as well as on drags, so the kind of event in flight says
     /// nothing reliable about where a selection came from; this flag does.
     private var isMouseSelecting = false
+    /// Set once a mouse drag changes the selection, until the bar for it is shown. PDFKit can post the last
+    /// selection change after the button is up, which must not turn the drag into a bar-only selection.
+    private var mouseSelectionPending = false
     private static let prefix = "folio:"
 
     override init(frame: CGRect) {
@@ -58,6 +64,10 @@ final class FolioPDFView: PDFView {
         let tap = UITapGestureRecognizer(target: self, action: #selector(tapped(_:)))
         tap.delegate = tapDelegate
         addGestureRecognizer(tap)
+        pageDown = PageDownTap(on: self) { [weak self] in self?.firstScrollView() }
+        let threeFingers = UITapGestureRecognizer(target: self, action: #selector(toggleTextFit))
+        threeFingers.numberOfTouchesRequired = 3
+        addGestureRecognizer(threeFingers)
         #endif
     }
 
@@ -178,7 +188,8 @@ final class FolioPDFView: PDFView {
         }
         #if os(macOS)
         // Only a mouse selection highlights on its own; Select All or find results just get the bar.
-        scheduleSelectionBar(autoHighlight: isMouseSelecting)
+        if isMouseSelecting { mouseSelectionPending = true }
+        scheduleSelectionBar(autoHighlight: isMouseSelecting || mouseSelectionPending)
         #else
         // Touch selections are adjusted with handles, so they only get the bar: highlighting is a tap on a colour.
         scheduleSelectionBar(autoHighlight: false)
@@ -191,6 +202,7 @@ final class FolioPDFView: PDFView {
             #if os(macOS)
             if NSEvent.pressedMouseButtons != 0 { self.scheduleSelectionBar(autoHighlight: autoHighlight); return }
             #endif
+            self.mouseSelectionPending = false
             guard let sel = self.currentSelection, let page = sel.pages.first else { return }
             var rect = self.convert(sel.bounds(for: page), from: page)
             if let last = sel.pages.last, last != page { rect = rect.union(self.convert(sel.bounds(for: last), from: last)) }
@@ -335,6 +347,78 @@ final class FolioPDFView: PDFView {
     }
 
     #if os(iOS)
+    var isFittedToText: Bool {
+        guard let textFitScale, !autoScales else { return false }
+        return abs(scaleFactor - textFitScale) < 0.001
+    }
+
+    /// Three-finger tap: zoom so the page's text fills the width, margins trimmed; again to fit the page.
+    @objc private func toggleTextFit() {
+        if isFittedToText {
+            textFitScale = nil
+            let page = currentPage
+            autoScales = true
+            if let page { go(to: page) }
+        } else if let page = currentPage {
+            fitText(of: page)
+        }
+    }
+
+    /// Zooms so the inked area of the page spans the view's width less a small gutter, and puts the top of
+    /// that area just under the top of the view.
+    func fitText(of page: PDFPage) {
+        let ink = Self.inkBounds(of: page)
+        guard ink.width > 20, let scroll = firstScrollView() else { return }
+        let gutter: CGFloat = 20
+        let scale = (bounds.width - 2 * gutter) / ink.width
+        autoScales = false
+        scaleFactor = scale
+        textFitScale = scaleFactor
+        layoutIfNeeded()
+        let corner = convert(CGPoint(x: ink.minX, y: ink.maxY), from: page)
+        let wanted = CGPoint(x: gutter, y: safeAreaInsets.top + gutter)
+        var offset = scroll.contentOffset
+        offset.x += corner.x - wanted.x
+        offset.y += corner.y - wanted.y
+        scroll.setContentOffset(offset, animated: false)
+    }
+
+    /// The part of the page that has anything drawn on it, in page space. Found from a small rendering so
+    /// it works for scanned pages too; the full page if nothing stands out.
+    private static func inkBounds(of page: PDFPage) -> CGRect {
+        let box = page.bounds(for: .cropBox)
+        guard page.rotation % 360 == 0, box.width > 0 else { return box }
+        let w = 500, h = max(1, Int(CGFloat(w) * box.height / box.width))
+        var pixels = [UInt8](repeating: 255, count: w * h)
+        let drawn: Bool = pixels.withUnsafeMutableBytes { buf in
+            guard let ctx = CGContext(data: buf.baseAddress, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w,
+                                      space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue)
+            else { return false }
+            ctx.setFillColor(gray: 1, alpha: 1)
+            ctx.fill(CGRect(x: 0, y: 0, width: w, height: h))
+            guard let image = page.thumbnail(of: CGSize(width: w, height: h), for: .cropBox).cgImage else { return false }
+            // The thumbnail keeps the page's aspect ratio, so it fills the context exactly.
+            ctx.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
+            return true
+        }
+        guard drawn else { return box }
+        // Ignore a thin border, where scans often have dark edges.
+        let edgeX = w / 100, edgeY = h / 100
+        var minX = w, maxX = -1, minRow = h, maxRow = -1
+        for row in edgeY..<(h - edgeY) {
+            let base = row * w
+            for x in edgeX..<(w - edgeX) where pixels[base + x] < 160 {
+                minX = min(minX, x); maxX = max(maxX, x)
+                minRow = min(minRow, row); maxRow = max(maxRow, row)
+            }
+        }
+        guard maxX > minX, maxRow > minRow else { return box }
+        // Rows in memory run top-down; page space runs bottom-up.
+        let sx = box.width / CGFloat(w), sy = box.height / CGFloat(h)
+        return CGRect(x: box.minX + CGFloat(minX) * sx, y: box.maxY - CGFloat(maxRow + 1) * sy,
+                      width: CGFloat(maxX - minX + 1) * sx, height: CGFloat(maxRow - minRow + 1) * sy)
+    }
+
     @objc private func tapped(_ gesture: UITapGestureRecognizer) {
         hideBar()
         activeHighlightID = nil
@@ -362,6 +446,7 @@ final class FolioPDFView: PDFView {
         hideBar()
         activeHighlightID = nil
         lastClickCount = event.clickCount
+        mouseSelectionPending = false
         // A double-click selects the word even inside a highlight, so it can be saved to the word list.
         if event.clickCount < 2, let hit = highlight(at: convert(event.locationInWindow, from: nil)) {
             focusHighlight(hit.id, rect: hit.rect)

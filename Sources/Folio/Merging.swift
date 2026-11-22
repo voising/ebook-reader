@@ -5,6 +5,7 @@ import Foundation
 
 extension BookRecord: CloudMergeable {
     mutating func merge(_ other: BookRecord) {
+        mergeReadingHistory(other)
         let known = Set(highlights.map(\.id))
         highlights += other.highlights.filter { !known.contains($0.id) }
         if (other.noteUpdatedAt ?? .distantPast) > (noteUpdatedAt ?? .distantPast) {
@@ -16,6 +17,13 @@ extension BookRecord: CloudMergeable {
             progress = other.progress
             updatedAt = other.updatedAt
         }
+    }
+
+    mutating func mergeReadingHistory(_ other: BookRecord) {
+        if readPassages != nil || other.readPassages != nil {
+            readPassages = ReadPassage.recent((readPassages ?? []) + (other.readPassages ?? []))
+        }
+        lastReadAt = [lastReadAt, other.lastReadAt].compactMap { $0 }.max()
     }
 }
 

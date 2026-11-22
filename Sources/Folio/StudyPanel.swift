@@ -657,3 +657,146 @@ struct ReviewSessionView: View {
         }
     }
 }
+
+// MARK: - Catch me up
+
+struct CatchUpPanel: View {
+    let reader: ReaderModel
+    @Bindable var model: CatchUpModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var showAnswer = false
+    @State private var attempt = 0
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Catch me up").font(.system(size: 26, weight: .semibold, design: .serif))
+                    Text(reader.title).font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
+                    if let date = model.context?.lastReadAt {
+                        (Text("Last read ") + Text(date, style: .relative) + Text(" ago"))
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    if let position = model.context?.position {
+                        if let chapter = position.chapter, let epub = reader.epub, epub.spine.indices.contains(chapter) {
+                            Text(epub.chapterTitle(chapter)).font(.caption).foregroundStyle(.secondary)
+                        } else if let page = position.page {
+                            Text("Page \(page + 1)").font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                Spacer(minLength: 12)
+                Button { dismiss() } label: { Image(systemName: "xmark") }
+                    .buttonStyle(.plain).help("Close recap").accessibilityLabel("Close recap")
+                    .keyboardShortcut(.cancelAction)
+            }
+            .padding(24)
+            Divider()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 24) {
+                    recapContent
+                    if let highlight = model.context?.lastHighlight {
+                        VStack(alignment: .leading, spacing: 8) {
+                            SectionHeading(text: "Your last highlight")
+                            Text(highlight.text).font(.system(size: 15, design: .serif)).textSelection(.enabled)
+                            if let note = highlight.note, !note.isEmpty {
+                                Text(note).font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
+                            }
+                            sourceLink(highlight.id)
+                        }
+                    }
+                    if let note = model.context?.note {
+                        VStack(alignment: .leading, spacing: 8) {
+                            SectionHeading(text: "Your book note")
+                            Text(note).font(.callout).textSelection(.enabled)
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(24)
+            }
+            Divider()
+            HStack {
+                Text("Based on saved passages and highlights.")
+                    .font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Button("Continue reading") { dismiss() }
+                    .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.defaultAction)
+            }
+            .padding(20)
+        }
+        .frame(idealWidth: 580, idealHeight: 620)
+        #if os(macOS)
+        .frame(minWidth: 460, maxWidth: 680, minHeight: 420, maxHeight: 800)
+        #endif
+        .task(id: attempt) { await model.generate() }
+    }
+
+    @ViewBuilder private var recapContent: some View {
+        if let recap = model.recap {
+            VStack(alignment: .leading, spacing: 18) {
+                SectionHeading(text: "Where you left off")
+                ForEach(Array(recap.ideas.enumerated()), id: \.offset) { index, idea in
+                    HStack(alignment: .top, spacing: 12) {
+                        Text("\(index + 1)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                            .padding(.top, 3)
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(idea.text).font(.system(size: 16, design: .serif)).textSelection(.enabled)
+                            sourceLink(idea.sourceID)
+                        }
+                    }
+                }
+            }
+            if let recall = recap.recall {
+                VStack(alignment: .leading, spacing: 10) {
+                    SectionHeading(text: "A quick recall · optional")
+                    Text(recall.question).font(.callout).textSelection(.enabled)
+                    if showAnswer {
+                        Text(recall.answer).font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
+                        sourceLink(recall.sourceID)
+                    }
+                    Button(showAnswer ? "Hide answer" : "Show answer") { showAnswer.toggle() }
+                        .controlSize(.small)
+                }
+            }
+        } else if model.isBusy {
+            HStack(spacing: 12) {
+                ProgressView().controlSize(.small)
+                Text("Finding the thread of your last reading…").font(.callout).foregroundStyle(.secondary)
+            }
+        } else if let error = model.error {
+            VStack(alignment: .leading, spacing: 10) {
+                ErrorLine(text: error)
+                Button("Try again") { attempt += 1 }
+            }
+        } else if model.context?.sources.isEmpty != false {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("A fresh start").font(.headline)
+                Text("Read a little or highlight a passage, then try again. Your next catch-up will have something to work with.")
+                    .font(.callout).foregroundStyle(.secondary)
+            }
+        } else if !Platform.hasClaude {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Recent passages").font(.headline)
+                Text("Open this book on your Mac to generate key ideas and a recall question with Claude.")
+                    .font(.callout).foregroundStyle(.secondary)
+                ForEach(Array((model.context?.sources ?? []).suffix(3))) { source in
+                    Text(source.text).font(.callout).lineLimit(6)
+                    sourceLink(source.id)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder private func sourceLink(_ id: String) -> some View {
+        if let source = model.context?.sources.first(where: { $0.id == id }) {
+            Button { reader.revealCatchUpSource(source) } label: {
+                Label(source.title, systemImage: "arrow.up.right").font(.caption).lineLimit(2)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(Color.accentColor)
+            .accessibilityLabel("Read source: \(source.title)")
+        }
+    }
+}

@@ -82,6 +82,10 @@ final class ReaderModel {
     let search: BookSearch
     let study: StudyModel
     let listen = ListenModel()
+    let catchUp = CatchUpModel()
+    var showCatchUp = false
+    /// Frozen before scroll restoration or cloud updates can replace the previous session.
+    let previousRecord: BookRecord
     /// Set for transcripts imported from YouTube.
     let videoID: String?
 
@@ -103,6 +107,7 @@ final class ReaderModel {
     @ObservationIgnored weak var webView: WKWebView?
     @ObservationIgnored weak var pdfView: FolioPDFView?
     @ObservationIgnored private var saveTask: Task<Void, Never>?
+    @ObservationIgnored private var pendingReadPassage: ReadPassage?
     @ObservationIgnored var onProgress: ((String, Double) -> Void)?
     /// Highlight ids as of the last load or save, used to tell what another device added or removed since.
     @ObservationIgnored private var syncedHighlightIDs: Set<String> = []
@@ -122,16 +127,19 @@ final class ReaderModel {
         search = BookSearch(epub: book.epub, pdf: book.pdf)
         study = StudyModel(bookID: book.bookID, title: book.title, author: book.author)
         videoID = YouTube.videoID(forImported: book.epub)
+        let loadedRecord: BookRecord
         switch CloudStore.loadResult(book.bookID) {
         case .value(let saved):
-            record = saved
+            loadedRecord = saved
         case .missing:
-            record = BookRecord(bookID: book.bookID, title: book.title, author: book.author, kind: book.kind)
+            loadedRecord = BookRecord(bookID: book.bookID, title: book.title, author: book.author, kind: book.kind)
         case .unreadable:
-            record = BookRecord(bookID: book.bookID, title: book.title, author: book.author, kind: book.kind)
+            loadedRecord = BookRecord(bookID: book.bookID, title: book.title, author: book.author, kind: book.kind)
             saveBlocked = true
         }
 
+        record = loadedRecord
+        previousRecord = loadedRecord
         syncedHighlightIDs = Set(record.highlights.map(\.id))
         if let pos = record.position {
             if let epub, let c = pos.chapter, epub.spine.indices.contains(c) {
@@ -222,6 +230,41 @@ final class ReaderModel {
         guard let pdf, let page = pdf.page(at: index) else { return }
         pdfView?.go(to: page)
     }
+
+    #if os(iOS)
+    /// Head-nod page turn. In landscape it scrolls like a double tap. In portrait a PDF goes to its next
+    /// page; a book jumps one screen (no scrolling, a quick cross-fade instead), and from the end of a
+    /// chapter on to the next one.
+    func turnPageOnNod() {
+        let view: UIView? = pdf != nil ? pdfView : webView
+        guard let view, let scene = view.window?.windowScene else { return }
+        if scene.effectiveGeometry.interfaceOrientation.isLandscape {
+            (pdf != nil ? view.firstScrollView() : webView?.scrollView)?.pageDown()
+            return
+        }
+        if let pdfView, pdf != nil {
+            // Keep the trimmed-margin zoom lined up on the next page's text.
+            let fitted = pdfView.isFittedToText
+            pdfView.goToNextPage(nil)
+            if fitted, let page = pdfView.currentPage { pdfView.fitText(of: page) }
+            return
+        }
+        guard let webView else { return }
+        let scroll = webView.scrollView
+        let inset = scroll.adjustedContentInset
+        let visible = scroll.bounds.height - inset.top - inset.bottom
+        let maxY = max(-inset.top, scroll.contentSize.height + inset.bottom - scroll.bounds.height)
+        guard scroll.contentOffset.y < maxY - 1 else {
+            if canGoNext { next() }
+            return
+        }
+        // Keep one line of overlap so the eye can find its place.
+        let target = min(maxY, scroll.contentOffset.y + visible - 24)
+        UIView.transition(with: webView, duration: 0.18, options: .transitionCrossDissolve) {
+            scroll.setContentOffset(CGPoint(x: scroll.contentOffset.x, y: target), animated: false)
+        }
+    }
+    #endif
 
     func next() {
         if epub != nil { goToChapter(chapterIndex + 1) } else { pdfView?.goToNextPage(nil) }
@@ -371,6 +414,7 @@ final class ReaderModel {
             // The record became readable (e.g. iCloud finished downloading): adopt it, keeping anything added meanwhile.
             switch CloudStore.loadResult(bookID) {
             case .value(var disk):
+                disk.mergeReadingHistory(record)
                 let known = Set(disk.highlights.map(\.id))
                 disk.highlights += record.highlights.filter { !known.contains($0.id) }
                 disk.position = record.position ?? disk.position
@@ -386,7 +430,8 @@ final class ReaderModel {
                 return
             }
         } else {
-            guard let disk = CloudStore.load(bookID), disk.updatedAt > record.updatedAt.addingTimeInterval(1) else { return }
+            guard var disk = CloudStore.load(bookID), disk.updatedAt > record.updatedAt.addingTimeInterval(1) else { return }
+            disk.mergeReadingHistory(record)
             record = disk
         }
         syncedHighlightIDs = Set(record.highlights.map(\.id))
@@ -411,6 +456,7 @@ final class ReaderModel {
     private func writeRecord() {
         guard !saveBlocked else { return }
         if case .value(let disk) = CloudStore.loadResult(bookID) {
+            record.mergeReadingHistory(disk)
             let onDisk = Set(disk.highlights.map(\.id)), mine = Set(record.highlights.map(\.id))
             let removedElsewhere = syncedHighlightIDs.subtracting(onDisk).intersection(mine)
             let addedElsewhere = disk.highlights.filter { !mine.contains($0.id) && !syncedHighlightIDs.contains($0.id) }
@@ -495,6 +541,71 @@ final class ReaderModel {
         saveTask?.cancel()
         writeRecord()
         study.flush()
+    }
+
+    // MARK: - Catch me up
+
+    func openCatchUp() {
+        if catchUp.context == nil || catchUp.context?.sources.isEmpty == true {
+            let previous = CatchUpContext(record: previousRecord, epub: epub)
+            catchUp.context = previous.sources.isEmpty ? CatchUpContext(record: record, epub: epub) : previous
+        }
+        showCatchUp = true
+    }
+
+    /// Capture only text visible in the foreground reader, never an entire unread chapter.
+    func captureReadPassage() async {
+        guard !showCatchUp, study.tab == nil else { pendingReadPassage = nil; return }
+        #if os(macOS)
+        guard NSApp.isActive else { pendingReadPassage = nil; return }
+        #else
+        guard UIApplication.shared.applicationState == .active else { pendingReadPassage = nil; return }
+        #endif
+        let position = ReadingPosition(chapter: epub != nil ? chapterIndex : nil,
+                                       fraction: epub != nil ? chapterFraction : nil,
+                                       page: pdf != nil ? pageIndex : nil)
+        let sectionTitle = currentChapterTitle
+        let text: String
+        if let webView, webView.window != nil, !webView.isLoading,
+           let pageURL = webView.url, epub?.spineIndex(of: pageURL) == chapterIndex {
+            text = (try? await webView.evaluateJavaScript(ReaderScripts.visiblePassage)) as? String ?? ""
+        } else if let pdfView, pdfView.window != nil, let page = pdf?.page(at: pageIndex) {
+            let visible = pdfView.convert(pdfView.bounds, to: page).intersection(page.bounds(for: .cropBox))
+            text = visible.isNull ? "" : (page.selection(for: visible)?.string ?? "")
+        } else { return }
+        guard !Task.isCancelled, !showCatchUp, study.tab == nil,
+              position.chapter == (epub != nil ? chapterIndex : nil),
+              position.fraction == (epub != nil ? chapterFraction : nil),
+              position.page == (pdf != nil ? pageIndex : nil) else { return }
+        let excerpt = String(text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(2500))
+        guard excerpt.count >= 40 else { pendingReadPassage = nil; return }
+        let passage = ReadPassage(text: excerpt, title: sectionTitle, position: position)
+        let previous = pendingReadPassage
+        pendingReadPassage = passage
+        // Two consecutive samples avoid recording passages merely flashed past while scrolling.
+        guard previous?.text == excerpt, previous?.position.chapter == position.chapter,
+              previous?.position.page == position.page else { return }
+        let passages = record.readPassages ?? []
+        if passages.last?.text == excerpt, passages.last?.position.chapter == position.chapter,
+           passages.last?.position.page == position.page {
+            if passage.date.timeIntervalSince(record.lastReadAt ?? .distantPast) >= 60 {
+                record.lastReadAt = passage.date
+                persist()
+            }
+            return
+        }
+        record.readPassages = ReadPassage.recent(passages + [passage])
+        record.lastReadAt = passage.date
+        persist()
+    }
+
+    func revealCatchUpSource(_ source: CatchUpSource) {
+        showCatchUp = false
+        study.tab = nil
+        if let highlight = source.highlight { reveal(highlight) }
+        else if let chapter = source.position.chapter {
+            goToChapter(chapter, anchor: .fraction(source.position.fraction ?? 0))
+        } else if let page = source.position.page { goToPage(page) }
     }
 
     // MARK: - Study

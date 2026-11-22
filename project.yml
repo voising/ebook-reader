@@ -32,6 +32,7 @@ targets:
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
         INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
+        INFOPLIST_KEY_NSMotionUsageDescription: Folio turns the page when you nod while wearing AirPods.
         CODE_SIGN_ENTITLEMENTS: Support/Folio-iOS.entitlements
   Folio-macOS:
     type: application

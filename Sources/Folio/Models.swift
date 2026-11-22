@@ -71,7 +71,27 @@ struct BookRecord: Codable {
     var progress: Double = 0
     var note: String?
     var noteUpdatedAt: Date?
+    var readPassages: [ReadPassage]?
+    var lastReadAt: Date?
     var updatedAt: Date = Date()
+}
+
+/// A bounded excerpt that was actually visible, with a route back to it.
+struct ReadPassage: Codable, Identifiable, Equatable {
+    var id: String = UUID().uuidString
+    var text: String
+    var title: String
+    var position: ReadingPosition
+    var date: Date = Date()
+
+    static func recent(_ passages: [ReadPassage]) -> [ReadPassage] {
+        var seen = Set<String>()
+        return Array(passages.sorted {
+            $0.date == $1.date ? $0.id < $1.id : $0.date > $1.date
+        }.filter {
+            seen.insert("\($0.position.chapter ?? -1)|\($0.position.page ?? -1)|\($0.text)").inserted
+        }.prefix(24)).reversed()
+    }
 }
 
 /// One book on this device's shelf.

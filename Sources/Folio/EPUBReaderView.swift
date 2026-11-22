@@ -22,6 +22,9 @@ struct EPUBReaderView: PlatformViewRepresentable {
         webView.underPageBackgroundColor = theme.theme.background
         webView.navigationDelegate = context.coordinator
         context.coordinator.webView = webView
+        #if os(iOS)
+        context.coordinator.pageDown = PageDownTap(on: webView) { [weak webView] in webView?.scrollView }
+        #endif
         reader.webView = webView
         context.coordinator.load(chapterIndex, token: anchorToken)
         return webView
@@ -54,6 +57,9 @@ struct EPUBReaderView: PlatformViewRepresentable {
         var loadedIndex = -1
         var anchorToken = -1
         var isFirstLoad = true
+        #if os(iOS)
+        var pageDown: PageDownTap?
+        #endif
 
         init(reader: ReaderModel, theme: ThemeSnapshot) {
             self.reader = reader

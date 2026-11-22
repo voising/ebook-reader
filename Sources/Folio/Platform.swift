@@ -187,3 +187,133 @@ extension View {
         #endif
     }
 }
+
+#if os(iOS)
+import UIKit
+
+/// In landscape, a double tap anywhere on the book scrolls down by almost a screen, keeping a few lines
+/// of overlap so the eye can find its place. In portrait it does nothing and the view's own double tap
+/// (zoom, word selection) still works.
+final class PageDownTap: NSObject, UIGestureRecognizerDelegate {
+    private weak var host: UIView?
+    private let scrollView: () -> UIScrollView?
+    private let recognizer = UITapGestureRecognizer()
+
+    init(on host: UIView, scrollView: @escaping () -> UIScrollView?) {
+        self.host = host
+        self.scrollView = scrollView
+        super.init()
+        recognizer.numberOfTapsRequired = 2
+        recognizer.delegate = self
+        recognizer.addTarget(self, action: #selector(fired))
+        host.addGestureRecognizer(recognizer)
+    }
+
+    private var isLandscape: Bool {
+        guard let window = host?.window else { return false }
+        if let scene = window.windowScene { return scene.effectiveGeometry.interfaceOrientation.isLandscape }
+        return window.bounds.width > window.bounds.height
+    }
+
+    @objc private func fired() { scrollView()?.pageDown() }
+
+    // MARK: UIGestureRecognizerDelegate
+
+    func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool { isLandscape }
+
+    /// The view's own double taps (PDF zoom, web view zoom/selection) wait for this one to fail,
+    /// so in landscape the page turn wins.
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+                           shouldBeRequiredToFailBy other: UIGestureRecognizer) -> Bool {
+        (other as? UITapGestureRecognizer)?.numberOfTapsRequired == 2
+    }
+
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+                           shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
+        !((other as? UITapGestureRecognizer)?.numberOfTapsRequired == 2)
+    }
+}
+
+extension UIScrollView {
+    /// Scrolls down by almost a screen, keeping a few lines of overlap so the eye can find its place.
+    func pageDown() {
+        let inset = adjustedContentInset
+        let visible = bounds.height - inset.top - inset.bottom
+        let maxY = max(-inset.top, contentSize.height + inset.bottom - bounds.height)
+        let target = min(maxY, contentOffset.y + visible * 0.9)
+        guard target > contentOffset.y + 1 else { return }
+        setContentOffset(CGPoint(x: contentOffset.x, y: target), animated: true)
+    }
+}
+
+extension UIView {
+    /// The first scroll view in this view's subtree, itself included.
+    func firstScrollView() -> UIScrollView? {
+        if let scroll = self as? UIScrollView { return scroll }
+        for sub in subviews { if let found = sub.firstScrollView() { return found } }
+        return nil
+    }
+}
+
+import CoreMotion
+
+/// Turns the page when the reader nods while wearing AirPods (or other headphones with head tracking).
+/// A nod is a quick tilt of the head away from where it has been resting and back again; slow changes of
+/// posture just move the resting point.
+@MainActor
+final class HeadNodPager {
+    private let manager = CMHeadphoneMotionManager()
+    private var onNod: (() -> Void)?
+
+    private enum Phase { case resting, leaving(since: TimeInterval), tilted(since: TimeInterval) }
+    private var phase = Phase.resting
+    private var baseline: Double?
+    private var quietUntil: TimeInterval = 0
+
+    /// How far the head must tilt (radians, ~11°), how close counts as back, and how quick it must be.
+    private let tilt = 0.2, settle = 0.08, reach = 0.35, full = 1.0, cooldown = 1.2
+
+    func start(onNod: @escaping () -> Void) {
+        self.onNod = onNod
+        guard manager.isDeviceMotionAvailable, !manager.isDeviceMotionActive else { return }
+        manager.startDeviceMotionUpdates(to: .main) { [weak self] motion, _ in
+            guard let motion else { return }
+            MainActor.assumeIsolated { self?.sample(pitch: motion.attitude.pitch, at: motion.timestamp) }
+        }
+    }
+
+    func stop() {
+        manager.stopDeviceMotionUpdates()
+        onNod = nil
+        baseline = nil
+        phase = .resting
+    }
+
+    private func sample(pitch: Double, at now: TimeInterval) {
+        guard let base = baseline else { baseline = pitch; return }
+        let off = abs(pitch - base)
+        switch phase {
+        case .resting:
+            if off > settle, now >= quietUntil { phase = .leaving(since: now) }
+            else { baseline = base * 0.95 + pitch * 0.05 }
+        case .leaving(let since):
+            if off > tilt { phase = .tilted(since: since) }
+            else if now - since > reach || off < settle / 2 { rest(at: pitch) }
+        case .tilted(let since):
+            if off < settle {
+                phase = .resting
+                quietUntil = now + cooldown
+                onNod?()
+            } else if now - since > full {
+                rest(at: pitch)
+            }
+        }
+    }
+
+    /// A slow or held movement: that is just a new posture.
+    private func rest(at pitch: Double) {
+        baseline = pitch
+        phase = .resting
+    }
+}
+#endif

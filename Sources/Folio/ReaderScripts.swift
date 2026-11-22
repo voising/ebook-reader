@@ -93,6 +93,41 @@ enum ReaderScripts {
     #folio-next .arrow { opacity: .5; font-size: 20px; }
     """#
 
+    /// Whole visible words only; scroll fractions cannot safely be converted to text offsets.
+    static let visiblePassage = #"""
+    (() => {
+      if (!document.body || document.hidden) return '';
+      const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+      const pieces = [];
+      let node, length = 0;
+      const visible = r => r.width > 0 && r.height > 0 && r.top >= 0 &&
+        r.bottom <= innerHeight && r.left >= 0 && r.right <= innerWidth;
+      while ((node = walker.nextNode()) && length < 2500) {
+        const parent = node.parentElement;
+        if (!parent || parent.closest('script,style,nav,[id^="folio-"],button')) continue;
+        const style = getComputedStyle(parent);
+        if (style.visibility !== 'visible' || style.display === 'none' || style.opacity === '0') continue;
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        const box = range.getBoundingClientRect();
+        if (box.bottom <= 0 || box.top >= innerHeight || !box.width || !box.height) continue;
+        if (visible(box)) {
+          pieces.push(node.textContent); length += node.textContent.length;
+        } else {
+          for (const match of node.textContent.matchAll(/\S+\s*/g)) {
+            range.setStart(node, match.index);
+            range.setEnd(node, match.index + match[0].length);
+            if (Array.from(range.getClientRects()).every(visible)) {
+              pieces.push(match[0]); length += match[0].length;
+            }
+            if (length >= 2500) break;
+          }
+        }
+      }
+      return pieces.join(' ').replace(/\s+/g, ' ').trim().slice(0, 2500);
+    })()
+    """#
+
     static let js = #"""
     (function () {
       if (window.folio) return;

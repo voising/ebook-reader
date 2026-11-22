@@ -8,6 +8,9 @@ struct ReaderView: View {
     @State private var showAppearance = false
     @State private var paneSize = CGSize.zero
     @State private var columns: NavigationSplitViewVisibility = .detailOnly
+    #if os(iOS)
+    @State private var nodPager = HeadNodPager()
+    #endif
 
     private var theme: ThemeSnapshot { settings.snapshot(scheme) }
 
@@ -69,8 +72,23 @@ struct ReaderView: View {
         .onDisappear {
             reader.flush()
             reader.listen.stop()
+            #if os(iOS)
+            nodPager.stop()
+            #endif
         }
+        #if os(iOS)
+        .onAppear { nodPager.start { [reader] in reader.turnPageOnNod() } }
+        #endif
         .onChange(of: reader.search.focusToken) { if columns == .detailOnly { withAnimation { columns = .all } } }
+        .sheet(isPresented: $reader.showCatchUp) {
+            CatchUpPanel(reader: reader, model: reader.catchUp)
+        }
+        .task {
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .seconds(3)) } catch { return }
+                await reader.captureReadPassage()
+            }
+        }
     }
 
     /// Where the definition card for a double-clicked word goes: just clear of the word and its selection
@@ -162,6 +180,10 @@ struct ReaderView: View {
                 reader.highlightSelection(.yellow)
             }
             .help("Highlight selection (⇧⌘H)")
+            Button { reader.openCatchUp() } label: {
+                Label("Catch me up", systemImage: "clock.arrow.circlepath")
+            }
+            .help("Catch me up on my previous reading")
             Menu {
                 ForEach(StudyTab.allCases) { tab in
                     Button { reader.study.tab = tab } label: { Label(tab.rawValue, systemImage: tab.icon) }
