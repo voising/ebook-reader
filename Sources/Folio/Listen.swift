@@ -412,26 +412,27 @@ struct ListenBar: View {
         HStack(spacing: 14) {
             if listen.isActive {
                 HStack(spacing: 12) {
-                    Button { listen.skip(-1) } label: { Image(systemName: "backward.fill") }.help("Back one paragraph")
+                    Button { listen.skip(-1) } label: { Image(systemName: "backward.fill") }.help("Back one paragraph").accessibilityLabel("Back one paragraph")
                     Button { listen.pauseOrResume() } label: {
-                        Image(systemName: listen.state == .paused ? "play.fill" : "pause.fill").font(.system(size: 17)).frame(width: 18)
+                        Image(systemName: listen.state == .paused ? "play.fill" : "pause.fill").font(.scaled(size: 17)).frame(width: 18)
                     }
                     .help(listen.state == .paused ? "Resume" : "Pause")
-                    Button { listen.skip(1) } label: { Image(systemName: "forward.fill") }.help("Forward one paragraph")
+                    .accessibilityLabel(listen.state == .paused ? "Resume" : "Pause")
+                    Button { listen.skip(1) } label: { Image(systemName: "forward.fill") }.help("Forward one paragraph").accessibilityLabel("Forward one paragraph")
                 }
                 .buttonStyle(.plain)
             }
             VStack(alignment: .leading, spacing: 1) {
                 if let error = listen.error {
-                    Text(error).font(.system(size: 12)).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
+                    Text(error).font(.scaled(size: 12)).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
                 } else {
                     HStack(spacing: 6) {
                         if listen.state == .preparing || listen.isBuffering { ProgressView().controlSize(.small) }
                         Text(listen.state == .preparing ? "Getting ready…" : "Part \(listen.index + 1) of \(listen.clips.count)")
-                            .font(.system(size: 12, weight: .medium)).monospacedDigit()
+                            .font(.scaled(size: 12, weight: .medium)).monospacedDigit()
                     }
                     Text(listen.usingOpenAI ? "OpenAI voice · Cedar" : "System voice")
-                        .font(.system(size: 10.5)).foregroundStyle(.secondary)
+                        .font(.scaled(size: 10.5)).foregroundStyle(.secondary)
                 }
             }
             .frame(minWidth: 110, maxWidth: 300, alignment: .leading)
@@ -443,19 +444,22 @@ struct ListenBar: View {
                         }
                     }
                 } label: {
-                    Text(Self.label(listen.speed)).font(.system(size: 12, weight: .medium)).monospacedDigit()
+                    Text(Self.label(listen.speed)).font(.scaled(size: 12, weight: .medium)).monospacedDigit()
                 }
                 .menuStyle(.borderlessButton)
                 .fixedSize()
                 .help("Speed")
+                .accessibilityLabel("Speed")
             }
             Button { showVoice = true } label: { Image(systemName: "waveform") }
                 .buttonStyle(.plain)
                 .help("Voice")
+                .accessibilityLabel("Voice")
                 .popover(isPresented: $showVoice, arrowEdge: .top) { VoiceSettings(listen: listen) }
             Button { listen.stop(); listen.dismissError() } label: { Image(systemName: "xmark") }
                 .buttonStyle(.plain).foregroundStyle(.secondary)
                 .help("Stop listening")
+                .accessibilityLabel("Stop listening")
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
@@ -479,17 +483,17 @@ private struct VoiceSettings: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Voice").font(.system(size: 15, weight: .semibold, design: .serif))
+            Text("Voice").font(.scaled(size: 15, weight: .semibold, design: .serif))
             Text(hasKey
                  ? "Folio reads with OpenAI's Cedar voice, using the key saved in this device's Keychain."
                  : "Folio is reading with the built-in system voice. Add an OpenAI API key to use the more natural Cedar voice.")
-                .font(.system(size: 12)).fixedSize(horizontal: false, vertical: true)
+                .font(.scaled(size: 12)).fixedSize(horizontal: false, vertical: true)
             Text("With the OpenAI voice, the text being read is sent to OpenAI and the audio is billed to your OpenAI account. Each passage is fetched only as you reach it, and kept on this device so replaying it is free.")
-                .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                .font(.scaled(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             SecureField(hasKey ? "Replace the saved key" : "OpenAI API key", text: $key)
                 .textFieldStyle(.roundedBorder)
             if failed {
-                Text("The key couldn't be saved to the Keychain.").font(.system(size: 11)).foregroundStyle(.red)
+                Text("The key couldn't be saved to the Keychain.").font(.scaled(size: 11)).foregroundStyle(.red)
             }
             HStack {
                 if hasKey {
@@ -510,7 +514,7 @@ private struct VoiceSettings: View {
                 .disabled(key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 .keyboardShortcut(.defaultAction)
             }
-            Text("A change takes effect the next time you start listening.").font(.system(size: 10.5)).foregroundStyle(.tertiary)
+            Text("A change takes effect the next time you start listening.").font(.scaled(size: 10.5)).foregroundStyle(.tertiary)
         }
         .padding(16)
         .frame(width: 330)

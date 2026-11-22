@@ -422,9 +422,14 @@ enum ReaderScripts {
 
       document.addEventListener('keydown', (e) => {
         if (e.metaKey || e.ctrlKey || e.altKey) return;
-        if (e.key === 'ArrowRight') { post({ type: 'nav', dir: 1 }); e.preventDefault(); }
-        else if (e.key === 'ArrowLeft') { post({ type: 'nav', dir: -1 }); e.preventDefault(); }
-        else if (e.key === 'Escape') hideBar();
+        if (e.key === 'Escape') { hideBar(); return; }
+        // Left and right turn one screen, like Space; only past the end of a chapter do they change it.
+        if (e.shiftKey || (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft')) return;
+        const dir = e.key === 'ArrowRight' ? 1 : -1;
+        const max = document.documentElement.scrollHeight - window.innerHeight;
+        if (dir > 0 ? window.scrollY >= max - 2 : window.scrollY <= 2) post({ type: 'nav', dir });
+        else window.scrollBy({ top: dir * (window.innerHeight - 48), behavior: 'smooth' });
+        e.preventDefault();
       });
 
       // Listen mode: the page's text blocks, and a highlight that follows the sentence being read.

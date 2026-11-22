@@ -152,15 +152,23 @@ final class WordStore {
     func undoAdd(_ raw: String) {
         guard let id = lastAddedID, let word = Self.clean(raw),
               words.first(where: { $0.id == id })?.word.caseInsensitiveCompare(word) == .orderedSame else { return }
-        remove(id)
+        remove(id, undoable: false)
     }
 
-    func remove(_ id: String) {
+    func remove(_ id: String, undoable: Bool = true) {
         reload()
-        guard !readOnly else { return }
-        words.removeAll { $0.id == id }
+        guard !readOnly, let index = words.firstIndex(where: { $0.id == id }) else { return }
+        let word = words.remove(at: index)
         if lastAddedID == id { lastAddedID = nil }
         save()
+        guard undoable else { return }
+        AppModel.shared.offerUndo("Removed “\(word.word)”") { [weak self] in
+            guard let self else { return }
+            self.reload()
+            guard !self.readOnly, self.entry(for: word.word) == nil else { return }
+            self.words.insert(word, at: min(index, self.words.count))
+            self.save()
+        }
     }
 
     // MARK: Definitions
@@ -265,15 +273,15 @@ struct WordsHubView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Words").font(.system(size: 34, weight: .semibold, design: .serif))
+                    Text("Words").font(.scaled(size: 34, weight: .semibold, design: .serif))
                     Text(subtitle).foregroundStyle(.secondary)
                 }
                 if store.words.isEmpty {
                     VStack(spacing: 14) {
                         Image(systemName: "character.book.closed")
-                            .font(.system(size: 50, weight: .light)).foregroundStyle(.tertiary)
-                        Text("Double-click a word while reading")
-                            .font(.system(size: 20, weight: .medium, design: .serif))
+                            .font(.scaled(size: 50, weight: .light)).foregroundStyle(.tertiary)
+                        Text(Self.emptyTitle)
+                            .font(.scaled(size: 20, weight: .medium, design: .serif))
                         Text("It lands here with its definition, the sentence you found it in, and a button to hear it.")
                             .multilineTextAlignment(.center).foregroundStyle(.secondary).frame(maxWidth: 360)
                     }
@@ -300,9 +308,15 @@ struct WordsHubView: View {
         }
     }
 
+    #if os(macOS)
+    private static let emptyTitle = "Double-click a word while reading"
+    #else
+    private static let emptyTitle = "Double-tap a word while reading"
+    #endif
+
     private var subtitle: String {
         if store.readOnly { return "The word list couldn't be read from iCloud Drive, so nothing can be saved right now." }
-        if store.words.isEmpty { return "Words you double-click while reading are kept here." }
+        if store.words.isEmpty { return "Words you look up while reading are kept here." }
         return "\(store.words.count) word\(store.words.count == 1 ? "" : "s") saved from your reading."
     }
 }
@@ -318,30 +332,44 @@ private struct WordCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(word.word).font(.system(size: 22, weight: .semibold, design: .serif)).lineLimit(1)
+                Text(word.word).font(.scaled(size: 22, weight: .semibold, design: .serif)).lineLimit(1)
                 if let part = word.partOfSpeech {
-                    Text(part).font(.system(size: 12, design: .serif)).italic().foregroundStyle(.secondary).lineLimit(1)
+                    Text(part).font(.scaled(size: 12, design: .serif)).italic().foregroundStyle(.secondary).lineLimit(1)
                 }
                 Spacer(minLength: 4)
+                #if os(macOS)
                 Button(action: onRemove) { Image(systemName: "xmark") }
                     .buttonStyle(.plain).foregroundStyle(.tertiary)
                     .opacity(hovering ? 1 : 0)
                     .help("Remove from Words")
+                    .accessibilityLabel("Remove from Words")
+                #else
+                // Nothing hovers on a touch screen, so the actions get a button of their own.
+                Menu {
+                    Button("Copy Word") { Platform.copy(word.word) }
+                    Button("Remove from Words", role: .destructive, action: onRemove)
+                } label: {
+                    Image(systemName: "ellipsis").frame(width: 28, height: 28).contentShape(Rectangle())
+                }
+                .foregroundStyle(.secondary)
+                .accessibilityLabel("Word actions")
+                #endif
                 Button(action: onSpeak) { Image(systemName: "speaker.wave.2.fill") }
                     .buttonStyle(.bordered).controlSize(.small)
                     .help("Hear it")
+                    .accessibilityLabel("Hear it")
             }
 
             if let definition = word.definition {
-                Text(definition).font(.system(size: 13.5)).fixedSize(horizontal: false, vertical: true)
+                Text(definition).font(.scaled(size: 13.5)).fixedSize(horizontal: false, vertical: true)
                 if let example = word.example {
-                    Text(example).font(.system(size: 12.5)).italic().foregroundStyle(.secondary)
+                    Text(example).font(.scaled(size: 12.5)).italic().foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             } else if let error = word.error {
                 HStack(spacing: 8) {
                     Text(Platform.hasClaude ? "Couldn't get a definition." : "No definition yet. Retry it in Folio on your Mac.")
-                        .font(.system(size: 12.5)).foregroundStyle(.secondary)
+                        .font(.scaled(size: 12.5)).foregroundStyle(.secondary)
                     if Platform.hasClaude { Button("Retry", action: onRetry).controlSize(.small) }
                 }
                 .help(error)
@@ -349,19 +377,19 @@ private struct WordCard: View {
                 HStack(spacing: 8) {
                     if isDefining { ProgressView().controlSize(.small) }
                     Text(isDefining ? "Looking it up…" : Platform.hasClaude ? "Waiting for a definition…" : "Your Mac will add the definition.")
-                        .font(.system(size: 12.5)).foregroundStyle(.secondary)
+                        .font(.scaled(size: 12.5)).foregroundStyle(.secondary)
                 }
             }
 
             if let context = word.context {
                 Text("“\(context)”")
-                    .font(.system(size: 12, design: .serif)).foregroundStyle(.secondary)
+                    .font(.scaled(size: 12, design: .serif)).foregroundStyle(.secondary)
                     .lineLimit(4).fixedSize(horizontal: false, vertical: true)
                     .padding(.leading, 9)
                     .overlay(alignment: .leading) { Rectangle().fill(.quaternary).frame(width: 2) }
             }
             if let source = word.source {
-                Text(source).font(.system(size: 10.5)).foregroundStyle(.tertiary).lineLimit(1)
+                Text(source).font(.scaled(size: 10.5)).foregroundStyle(.tertiary).lineLimit(1)
             }
         }
         .padding(16)
@@ -423,35 +451,35 @@ struct LookupCard: View {
         let entry = store.entry(for: lookup.word)
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(lookup.word).font(.system(size: 18, weight: .semibold, design: .serif)).lineLimit(1)
+                Text(lookup.word).font(.scaled(size: 18, weight: .semibold, design: .serif)).lineLimit(1)
                 if let part = entry?.partOfSpeech {
-                    Text(part).font(.system(size: 12, design: .serif)).italic().foregroundStyle(.secondary).lineLimit(1)
+                    Text(part).font(.scaled(size: 12, design: .serif)).italic().foregroundStyle(.secondary).lineLimit(1)
                 }
                 Spacer(minLength: 4)
                 Button { store.speak(word: lookup.word) } label: { Image(systemName: "speaker.wave.2.fill") }
-                    .buttonStyle(.plain).foregroundStyle(.secondary).help("Hear it")
+                    .buttonStyle(.plain).foregroundStyle(.secondary).help("Hear it").accessibilityLabel("Hear it")
                 Button(action: onClose) { Image(systemName: "xmark") }
-                    .buttonStyle(.plain).foregroundStyle(.tertiary).help("Close")
+                    .buttonStyle(.plain).foregroundStyle(.tertiary).help("Close").accessibilityLabel("Close")
             }
             if let definition = entry?.definition {
-                Text(definition).font(.system(size: 13.5)).fixedSize(horizontal: false, vertical: true)
+                Text(definition).font(.scaled(size: 13.5)).fixedSize(horizontal: false, vertical: true)
                 if let example = entry?.example {
-                    Text(example).font(.system(size: 12.5)).italic().foregroundStyle(.secondary)
+                    Text(example).font(.scaled(size: 12.5)).italic().foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             } else {
                 if let dictionary {
-                    Text(dictionary).font(.system(size: 13)).fixedSize(horizontal: false, vertical: true)
+                    Text(dictionary).font(.scaled(size: 13)).fixedSize(horizontal: false, vertical: true)
                 }
                 if entry?.error != nil {
-                    Text("Claude couldn't define it. Retry from the Words tab.").font(.system(size: 11.5)).foregroundStyle(.secondary)
+                    Text("Claude couldn't define it. Retry from the Words tab.").font(.scaled(size: 11.5)).foregroundStyle(.secondary)
                 } else if Platform.hasClaude {
                     HStack(spacing: 7) {
                         ProgressView().controlSize(.small)
-                        Text("Asking Claude what it means here…").font(.system(size: 11.5)).foregroundStyle(.secondary)
+                        Text("Asking Claude what it means here…").font(.scaled(size: 11.5)).foregroundStyle(.secondary)
                     }
                 } else {
-                    Text("Saved to Words. Your Mac will add the definition.").font(.system(size: 11.5)).foregroundStyle(.secondary)
+                    Text("Saved to Words. Your Mac will add the definition.").font(.scaled(size: 11.5)).foregroundStyle(.secondary)
                 }
             }
         }

@@ -20,7 +20,17 @@ enum StudyTab: String, CaseIterable, Identifiable {
 final class StudyModel {
     private(set) var data: LearnData
     /// The open study tab, or nil while reading. `-studyTab Map` on the command line opens with one showing.
-    var tab: StudyTab? = UserDefaults.standard.string(forKey: "studyTab").flatMap(StudyTab.init(rawValue:))
+    var tab: StudyTab? = UserDefaults.standard.string(forKey: "studyTab").flatMap(StudyTab.init(rawValue:)) {
+        didSet { if let tab { UserDefaults.standard.set(tab.rawValue, forKey: "lastStudyTab") } }
+    }
+
+    /// What the Study button opens: the primer for a section nothing has been made for yet, since that
+    /// is where reading starts, and otherwise the tab used last.
+    func defaultTab(for key: String) -> StudyTab {
+        let untouched = primer(for: key) == nil && map(for: key) == nil && cards(for: key).isEmpty && attempts(for: key).isEmpty
+        if untouched { return .primer }
+        return UserDefaults.standard.string(forKey: "lastStudyTab").flatMap(StudyTab.init(rawValue:)) ?? .primer
+    }
     private(set) var busy: Set<StudyTab> = []
     var errors: [StudyTab: String] = [:]
     var selectedNode: String?
@@ -175,9 +185,17 @@ final class StudyModel {
     // MARK: Cards
 
     func deleteCard(_ id: String) {
-        data.cards?.removeAll { $0.id == id }
+        guard let index = data.cards?.firstIndex(where: { $0.id == id }), let card = data.cards?[index] else { return }
+        data.cards?.remove(at: index)
         quiz?.removeAll { $0.card.id == id }
         persist()
+        AppModel.shared.offerUndo("Card deleted") { [weak self] in
+            guard let self, self.data.cards?.contains(where: { $0.id == card.id }) != true else { return }
+            var cards = self.data.cards ?? []
+            cards.insert(card, at: min(index, cards.count))
+            self.data.cards = cards
+            self.persist()
+        }
     }
 
     func deleteAttempt(_ id: String) {

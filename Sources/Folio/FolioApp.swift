@@ -92,9 +92,9 @@ struct FolioApp: App {
                 Button("Toggle Claude Chat") { withAnimation { app.reader?.showChat.toggle() } }
                     .keyboardShortcut("c", modifiers: [.command, .option])
                     .disabled(app.reader == nil)
-                Button("Show Highlights") { app.reader?.sidebarTab = .highlights }
+                Button("Show Highlights") { app.reader?.showSidebar(.highlights) }
                     .disabled(app.reader == nil)
-                Button("Show Note") { app.reader?.sidebarTab = .notes }
+                Button("Show Note") { app.reader?.showSidebar(.notes) }
                     .keyboardShortcut("n", modifiers: [.command, .option])
                     .disabled(app.reader == nil)
                 Divider()
@@ -158,6 +158,9 @@ extension AppModel {
 
 struct RootView: View {
     @Environment(AppModel.self) private var app
+    #if os(iOS)
+    @Environment(\.dynamicTypeSize) private var typeSize
+    #endif
 
     var body: some View {
         @Bindable var app = app
@@ -179,6 +182,19 @@ struct RootView: View {
             }
         }
         .animation(.easeInOut(duration: 0.2), value: app.reader?.bookID)
+        #if os(iOS)
+        // Font sizes are worked out when a view is built, so a new text size rebuilds the views.
+        .id(typeSize)
+        #endif
+        .tint(Color.folioAccent)
+        .overlay(alignment: .bottom) {
+            if let offer = app.undoOffer {
+                UndoToast(message: offer.message) { app.performUndo() }
+                    .padding(.bottom, 44)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.easeOut(duration: 0.2), value: app.undoOffer?.id)
         .task {
             // `-addLink <url>` on the command line imports an article and opens it.
             if let link = UserDefaults.standard.string(forKey: "addLink"),
@@ -206,9 +222,57 @@ struct RootView: View {
     }
 }
 
+/// Shown for a few seconds after something is deleted, with the way back.
+private struct UndoToast: View {
+    let message: String
+    let undo: () -> Void
+
+    var body: some View {
+        HStack(spacing: 14) {
+            Text(message).font(.scaled(size: 12.5, weight: .medium)).lineLimit(1)
+            Button("Undo", action: undo)
+                .buttonStyle(.plain)
+                .font(.scaled(size: 12.5, weight: .semibold))
+                .foregroundStyle(Color.folioAccent)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(.regularMaterial, in: Capsule())
+        .overlay(Capsule().strokeBorder(.quaternary))
+        .shadow(color: .black.opacity(0.2), radius: 14, y: 6)
+        .padding(.horizontal, 16)
+    }
+}
+
 @Observable @MainActor
 final class AppModel {
     static let shared = AppModel()
+
+    /// The last deletion, while it can still be taken back.
+    struct UndoOffer {
+        let id = UUID()
+        let message: String
+        let undo: () -> Void
+    }
+    private(set) var undoOffer: UndoOffer?
+    @ObservationIgnored private var undoTimer: Task<Void, Never>?
+
+    func offerUndo(_ message: String, undo: @escaping () -> Void) {
+        undoTimer?.cancel()
+        undoOffer = UndoOffer(message: message, undo: undo)
+        undoTimer = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(7))
+            guard !Task.isCancelled else { return }
+            self?.undoOffer = nil
+        }
+    }
+
+    func performUndo() {
+        guard let offer = undoOffer else { return }
+        undoTimer?.cancel()
+        undoOffer = nil
+        offer.undo()
+    }
 
     var library: [LibraryItem]
     var reader: ReaderModel?
@@ -314,6 +378,13 @@ final class AppModel {
         library.removeAll { $0.id == item.id }
         LibraryStore.save(library)
         CloudStore.removeBookFile(id: item.id, kind: item.kind)
+    }
+
+    /// Puts back a book whose file was left alone when it was removed.
+    func restore(_ item: LibraryItem, at index: Int) {
+        guard !library.contains(where: { $0.id == item.id }) else { return }
+        library.insert(item, at: min(index, library.count))
+        LibraryStore.save(library)
     }
 
     /// Picks up books added or removed on another device, and (once, on the Mac) moves earlier data into iCloud.

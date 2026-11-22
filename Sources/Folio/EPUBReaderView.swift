@@ -176,7 +176,10 @@ struct EPUBReaderView: PlatformViewRepresentable {
             case "scroll":
                 if let f = body["fraction"] as? NSNumber { reader.updateFraction(f.doubleValue) }
             case "nav":
-                if (body["dir"] as? NSNumber)?.intValue ?? 0 > 0 { reader.next() } else { reader.previous() }
+                // Sent when an arrow key pages past either end of the chapter: carry on into the next
+                // one, or back onto the last screen of the one before.
+                if (body["dir"] as? NSNumber)?.intValue ?? 0 > 0 { reader.next() }
+                else { reader.goToChapter(reader.chapterIndex - 1, anchor: .fraction(1)) }
             default: break
             }
         }

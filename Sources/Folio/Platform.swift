@@ -88,6 +88,35 @@ extension Color {
     }
 }
 
+extension PlatformColor {
+    /// The app's one accent: the warm brown of the reader's links, lighter in the dark.
+    static let folioAccent: PlatformColor = {
+        let light = PlatformColor(srgbRed: 0.55, green: 0.33, blue: 0.16, alpha: 1)
+        let dark = PlatformColor(srgbRed: 0.80, green: 0.52, blue: 0.28, alpha: 1)
+        #if os(macOS)
+        return NSColor(name: nil) { $0.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? dark : light }
+        #else
+        return UIColor { $0.userInterfaceStyle == .dark ? dark : light }
+        #endif
+    }()
+}
+
+extension Color {
+    static let folioAccent = Color(platform: PlatformColor.folioAccent)
+}
+
+extension Font {
+    /// A system font at a fixed size on the Mac. On iPad it follows the Dynamic Type setting, up to
+    /// 1.6 times the size, which is as far as the fixed-width parts of the layout stretch.
+    static func scaled(size: CGFloat, weight: Font.Weight? = nil, design: Font.Design? = nil) -> Font {
+        #if os(iOS)
+        .system(size: min(UIFontMetrics.default.scaledValue(for: size), size * 1.6), weight: weight, design: design)
+        #else
+        .system(size: size, weight: weight, design: design)
+        #endif
+    }
+}
+
 extension Image {
     init(platform image: PlatformImage) {
         #if os(macOS)

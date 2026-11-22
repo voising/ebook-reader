@@ -237,10 +237,11 @@ struct SearchPanel: View {
             } else if !search.query.isEmpty {
                 Button { search.query = "" } label: { Image(systemName: "xmark.circle.fill") }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("Clear search")
                     .foregroundStyle(.tertiary)
             }
         }
-        .font(.system(size: 12.5))
+        .font(.scaled(size: 12.5))
         .padding(.horizontal, 8)
         .frame(height: 26)
         .background(RoundedRectangle(cornerRadius: 7).fill(Color.primary.opacity(0.06)))
@@ -255,7 +256,7 @@ struct SearchPanel: View {
                 Spacer()
                 if let s = search.selected { Text("\(s + 1) of \(search.hits.count)").monospacedDigit() }
             }
-            .font(.system(size: 10.5, weight: .medium))
+            .font(.scaled(size: 10.5, weight: .medium))
             .foregroundStyle(.secondary)
             .padding(.horizontal, 16)
             .padding(.bottom, 4)
@@ -265,14 +266,14 @@ struct SearchPanel: View {
                         Section(reader.searchSectionTitle(group.section)) {
                             ForEach(group.hits) { hit in
                                 Text(snippet(hit))
-                                    .font(.system(size: 12.5, design: .serif))
+                                    .font(.scaled(size: 12.5, design: .serif))
                                     .lineLimit(3)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                     .padding(.vertical, 2)
                                     .contentShape(Rectangle())
                                     .onTapGesture { reader.showHit(hit.id) }
                                     .listRowBackground(search.selected == hit.id
-                                        ? RoundedRectangle(cornerRadius: 6).fill(Color.accentColor.opacity(0.14)).padding(.horizontal, 6)
+                                        ? RoundedRectangle(cornerRadius: 6).fill(Color.folioAccent.opacity(0.14)).padding(.horizontal, 6)
                                         : nil)
                                     .id(hit.id)
                             }
@@ -293,14 +294,14 @@ struct SearchPanel: View {
         var after = AttributedString(hit.after)
         before.foregroundColor = .secondary
         after.foregroundColor = .secondary
-        match.font = .system(size: 12.5, weight: .semibold, design: .serif)
+        match.font = .scaled(size: 12.5, weight: .semibold, design: .serif)
         match.backgroundColor = HighlightColor.yellow.color.opacity(0.4)
         return before + match + after
     }
 
     private func placeholder(icon: String, title: String, detail: String) -> some View {
         VStack(spacing: 10) {
-            Image(systemName: icon).font(.system(size: 28)).foregroundStyle(.tertiary)
+            Image(systemName: icon).font(.scaled(size: 28)).foregroundStyle(.tertiary)
             Text(title).font(.headline)
             Text(detail).font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
         }

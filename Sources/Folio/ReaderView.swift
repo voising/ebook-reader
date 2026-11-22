@@ -77,9 +77,11 @@ struct ReaderView: View {
             #endif
         }
         #if os(iOS)
-        .onAppear { nodPager.start { [reader] in reader.turnPageOnNod() } }
+        .onAppear { setNodPaging(settings.nodToTurn) }
+        .onChange(of: settings.nodToTurn) { _, on in setNodPaging(on) }
         #endif
-        .onChange(of: reader.search.focusToken) { if columns == .detailOnly { withAnimation { columns = .all } } }
+        .onChange(of: reader.search.focusToken) { revealSidebar() }
+        .onChange(of: reader.sidebarToken) { revealSidebar() }
         .sheet(isPresented: $reader.showCatchUp) {
             CatchUpPanel(reader: reader, model: reader.catchUp)
         }
@@ -90,6 +92,16 @@ struct ReaderView: View {
             }
         }
     }
+
+    private func revealSidebar() {
+        if columns == .detailOnly { withAnimation { columns = .all } }
+    }
+
+    #if os(iOS)
+    private func setNodPaging(_ on: Bool) {
+        if on { nodPager.start { [reader] in reader.turnPageOnNod() } } else { nodPager.stop() }
+    }
+    #endif
 
     /// Where the definition card for a double-clicked word goes: just clear of the word and its selection
     /// bar. The bar sits above the word on the Mac and below it on iPad; the card takes the other side
@@ -141,8 +153,8 @@ struct ReaderView: View {
                     .help("Folio found saved data for this book but couldn't read it, so it is leaving that file untouched. It retries when you switch back to the app.")
             }
         }
-        .font(.system(size: 10.5, weight: .medium))
-        .foregroundStyle(Color(platform: theme.theme.foreground).opacity(0.45))
+        .font(.scaled(size: 10.5, weight: .medium))
+        .foregroundStyle(Color(platform: theme.theme.foreground).opacity(0.62))
         .padding(.horizontal, 18)
         .frame(height: 28)
         .animation(.easeOut(duration: 0.3), value: reader.progress)
@@ -163,10 +175,10 @@ struct ReaderView: View {
             ControlGroup {
                 Button { reader.previous() } label: { Label("Previous", systemImage: "chevron.left") }
                     .disabled(!reader.canGoPrevious)
-                    .help(reader.kind == .epub ? "Previous chapter" : "Previous page")
+                    .help(reader.kind == .epub ? "Previous chapter (⌘[)" : "Previous page")
                 Button { reader.next() } label: { Label("Next", systemImage: "chevron.right") }
                     .disabled(!reader.canGoNext)
-                    .help(reader.kind == .epub ? "Next chapter" : "Next page")
+                    .help(reader.kind == .epub ? "Next chapter (⌘])" : "Next page")
             }
             Menu {
                 ForEach(HighlightColor.allCases) { c in
@@ -195,7 +207,7 @@ struct ReaderView: View {
             } label: {
                 Label("Study", systemImage: reader.study.tab == nil ? "graduationcap" : "graduationcap.fill")
             } primaryAction: {
-                reader.study.tab = reader.study.tab == nil ? .map : nil
+                reader.study.tab = reader.study.tab == nil ? reader.study.defaultTab(for: reader.sectionKey) : nil
             }
             .help("Study this section: primer, concept map, explain-back, flashcards")
             if reader.videoID != nil {
@@ -261,7 +273,7 @@ struct SidebarView: View {
                     let current = reader.isCurrent(entry)
                     Button { reader.go(to: entry) } label: {
                         Text(entry.title)
-                            .font(.system(size: entry.level == 0 ? 12.5 : 12, weight: current ? .semibold : .regular))
+                            .font(.scaled(size: entry.level == 0 ? 12.5 : 12, weight: current ? .semibold : .regular))
                             .foregroundStyle(entry.target == nil ? .tertiary : (current ? .primary : .secondary))
                             .lineLimit(2)
                             .padding(.leading, CGFloat(entry.level) * 12)
@@ -269,7 +281,7 @@ struct SidebarView: View {
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .listRowBackground(current ? RoundedRectangle(cornerRadius: 6).fill(Color.accentColor.opacity(0.12)).padding(.horizontal, 6) : nil)
+                    .listRowBackground(current ? RoundedRectangle(cornerRadius: 6).fill(Color.folioAccent.opacity(0.12)).padding(.horizontal, 6) : nil)
                     .id(entry.id)
                 }
                 if reader.toc.isEmpty {
@@ -287,7 +299,7 @@ struct SidebarView: View {
         VStack(spacing: 0) {
             if reader.highlights.isEmpty {
                 VStack(spacing: 10) {
-                    Image(systemName: "highlighter").font(.system(size: 28)).foregroundStyle(.tertiary)
+                    Image(systemName: "highlighter").font(.scaled(size: 28)).foregroundStyle(.tertiary)
                     Text("No highlights yet").font(.headline)
                     Text("Select text while reading and pick a color.")
                         .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
@@ -316,6 +328,15 @@ struct SidebarView: View {
                                 Divider()
                                 Button("Delete", role: .destructive) { reader.removeHighlight(h.id) }
                             }
+                            // The same actions without a long press or right-click.
+                            .swipeActions(edge: .trailing) {
+                                Button("Delete", systemImage: "trash", role: .destructive) { reader.removeHighlight(h.id) }
+                                Button("Add to Note", systemImage: "note.text.badge.plus") { reader.appendToNote(h) }
+                            }
+                            .swipeActions(edge: .leading) {
+                                Button("Flashcard", systemImage: "rectangle.on.rectangle.angled") { reader.makeCard(from: h) }
+                                    .tint(Color.folioAccent)
+                            }
                     }
                 }
                 .listStyle(.sidebar)
@@ -323,7 +344,7 @@ struct SidebarView: View {
                 HStack {
                     Label(CloudStore.isUsingICloud ? "Synced with iCloud" : "Saved locally",
                           systemImage: CloudStore.isUsingICloud ? "icloud" : "internaldrive")
-                        .font(.system(size: 10.5))
+                        .font(.scaled(size: 10.5))
                         .foregroundStyle(.secondary)
                     Spacer()
                     Button(copied ? "Copied" : "Copy as Markdown") {
@@ -347,15 +368,15 @@ private struct NoteEditor: View {
         VStack(spacing: 0) {
             ZStack(alignment: .topLeading) {
                 if reader.note.isEmpty {
-                    Text("Write your thoughts on this book…\n\nRight-click a highlight and choose Add to Note to quote it here.")
-                        .font(.system(size: 13.5, design: .serif))
+                    Text("Write your thoughts on this book…\n\nSwipe a highlight left, or right-click it, and choose Add to Note to quote it here.")
+                        .font(.scaled(size: 13.5, design: .serif))
                         .foregroundStyle(.tertiary)
                         .padding(.horizontal, 17)
                         .padding(.vertical, 12)
                         .allowsHitTesting(false)
                 }
                 TextEditor(text: $reader.note)
-                    .font(.system(size: 13.5, design: .serif))
+                    .font(.scaled(size: 13.5, design: .serif))
                     .lineSpacing(3)
                     .scrollContentBackground(.hidden)
                     .focused($focused)
@@ -372,7 +393,7 @@ private struct NoteEditor: View {
                     Text("Edited \(date.formatted(.relative(presentation: .named)))")
                 }
             }
-            .font(.system(size: 10.5))
+            .font(.scaled(size: 10.5))
             .foregroundStyle(.secondary)
             .padding(10)
         }
@@ -390,19 +411,22 @@ private struct HighlightRow: View {
                 .frame(width: 3)
             VStack(alignment: .leading, spacing: 4) {
                 Text(highlight.text)
-                    .font(.system(size: 12.5, design: .serif))
+                    .font(.scaled(size: 12.5, design: .serif))
                     .lineLimit(5)
                     .foregroundStyle(.primary)
                 HStack(spacing: 4) {
                     if let t = highlight.chapterTitle { Text(t).lineLimit(1) }
                     if let p = highlight.page { Text("· p. \(p + 1)") }
                 }
-                .font(.system(size: 10.5))
+                .font(.scaled(size: 10.5))
                 .foregroundStyle(.secondary)
             }
         }
         .padding(.vertical, 4)
         .fixedSize(horizontal: false, vertical: true)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(highlight.color.label) highlight: \(highlight.text)")
+        .accessibilityAddTraits(.isButton)
     }
 }
 
@@ -425,16 +449,18 @@ struct AppearancePopover: View {
                                 } else {
                                     Circle().fill(Color(platform: t.background))
                                 }
-                                Text("Aa").font(.system(size: 13, weight: .medium, design: .serif))
+                                Text("Aa").font(.scaled(size: 13, weight: .medium, design: .serif))
                                     .foregroundStyle(Color(platform: t == .auto ? ReaderTheme.sepia.foreground : t.foreground))
                             }
                             .frame(width: 40, height: 40)
-                            .overlay(Circle().strokeBorder(settings.theme == t ? Color.accentColor : Color.primary.opacity(0.15),
+                            .overlay(Circle().strokeBorder(settings.theme == t ? Color.folioAccent : Color.primary.opacity(0.15),
                                                            lineWidth: settings.theme == t ? 2.5 : 1))
-                            Text(t.label).font(.system(size: 10.5)).foregroundStyle(.secondary)
+                            Text(t.label).font(.scaled(size: 10.5)).foregroundStyle(.secondary)
                         }
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("\(t.label) theme")
+                    .accessibilityAddTraits(settings.theme == t ? .isSelected : [])
                 }
             }
             if !isPDF {
@@ -444,12 +470,12 @@ struct AppearancePopover: View {
                 .pickerStyle(.segmented)
                 HStack(spacing: 10) {
                     Image(systemName: "textformat.size.smaller").foregroundStyle(.secondary)
-                    Slider(value: $settings.fontSize, in: 14...30, step: 1)
+                    Slider(value: $settings.fontSize, in: 14...30, step: 1).accessibilityLabel("Text size")
                     Image(systemName: "textformat.size.larger").foregroundStyle(.secondary)
                 }
                 HStack(spacing: 10) {
                     Image(systemName: "text.line.first.and.arrowtriangle.forward").foregroundStyle(.secondary)
-                    Slider(value: $settings.lineHeight, in: 1.3...2.1)
+                    Slider(value: $settings.lineHeight, in: 1.3...2.1).accessibilityLabel("Line spacing")
                     Image(systemName: "text.line.last.and.arrowtriangle.forward").foregroundStyle(.secondary)
                 }
                 Picker("Width", selection: $settings.width) {
@@ -457,6 +483,17 @@ struct AppearancePopover: View {
                 }
                 .pickerStyle(.segmented)
             }
+            #if os(iOS)
+            Divider()
+            Toggle(isOn: $settings.nodToTurn) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Nod to turn the page").font(.scaled(size: 13))
+                    Text("With AirPods or other head-tracking headphones on.")
+                        .font(.scaled(size: 10.5)).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            #endif
         }
         .padding(18)
         .frame(width: 270)

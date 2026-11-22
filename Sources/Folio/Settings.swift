@@ -72,6 +72,8 @@ final class ReaderSettings {
     var width: ReaderWidth { didSet { defaults.set(width.rawValue, forKey: "width") } }
     var fontSize: Double { didSet { defaults.set(fontSize, forKey: "fontSize") } }
     var lineHeight: Double { didSet { defaults.set(lineHeight, forKey: "lineHeight") } }
+    /// iPad: a nod of the head turns the page while head-tracking headphones are on.
+    var nodToTurn: Bool { didSet { defaults.set(nodToTurn, forKey: "nodToTurn") } }
 
     private init() {
         theme = ReaderTheme(rawValue: defaults.string(forKey: "theme") ?? "") ?? .auto
@@ -79,6 +81,7 @@ final class ReaderSettings {
         width = ReaderWidth(rawValue: defaults.string(forKey: "width") ?? "") ?? .medium
         fontSize = defaults.object(forKey: "fontSize") as? Double ?? 19
         lineHeight = defaults.object(forKey: "lineHeight") as? Double ?? 1.65
+        nodToTurn = defaults.object(forKey: "nodToTurn") as? Bool ?? true
     }
 
     func snapshot(_ scheme: ColorScheme) -> ThemeSnapshot {

@@ -43,25 +43,65 @@ struct HubView: View {
     }
 }
 
+/// How the shelf is ordered.
+enum LibrarySort: String, CaseIterable, Identifiable {
+    case recent = "Recently Opened", title = "Title", author = "Author", progress = "Progress"
+    var id: String { rawValue }
+}
+
 struct LibraryView: View {
     @Environment(AppModel.self) private var app
     @State private var dropTargeted = false
     @State private var removing: LibraryItem?
+    @State private var query = ""
+    @AppStorage("librarySort") private var sort = LibrarySort.recent
 
     private let columns = [GridItem(.adaptive(minimum: 150, maximum: 190), spacing: 32, alignment: .top)]
+
+    /// The shelf as shown: filtered by the search field, in the chosen order.
+    private var shelf: [LibraryItem] {
+        let needle = query.trimmingCharacters(in: .whitespaces)
+        let found = needle.isEmpty ? app.library : app.library.filter {
+            $0.title.localizedCaseInsensitiveContains(needle) || $0.author.localizedCaseInsensitiveContains(needle)
+        }
+        switch sort {
+        case .recent: return found.sorted { $0.lastOpened > $1.lastOpened }
+        case .title: return found.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
+        case .author: return found.sorted { $0.author.localizedStandardCompare($1.author) == .orderedAscending }
+        case .progress: return found.sorted { $0.progress > $1.progress }
+        }
+    }
+
+    /// The unfinished item opened last, offered on its own once there is more than one thing to pick from.
+    private var current: LibraryItem? {
+        guard app.library.count > 1, query.isEmpty else { return nil }
+        return app.library.filter { $0.progress < 0.995 }.max { $0.lastOpened < $1.lastOpened }
+    }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
-                HStack(alignment: .firstTextBaseline) {
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Library")
-                            .font(.system(size: 34, weight: .semibold, design: .serif))
+                            .font(.scaled(size: 34, weight: .semibold, design: .serif))
+                        // Videos and articles sit on the shelf too, so they aren't all "books".
                         Text(app.library.isEmpty ? "Your books will appear here." :
-                             "\(app.library.count) book\(app.library.count == 1 ? "" : "s")")
+                             "\(app.library.count) item\(app.library.count == 1 ? "" : "s")")
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
+                    if app.library.count > 1 {
+                        searchField
+                        Picker("Sort", selection: $sort) {
+                            ForEach(LibrarySort.allCases) { Text($0.rawValue).tag($0) }
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .fixedSize()
+                        .controlSize(.large)
+                        .help("Sort the library")
+                    }
                     Button { app.showAddLink = true } label: {
                         Label("Add Link…", systemImage: "link").padding(.horizontal, 4)
                     }
@@ -78,21 +118,37 @@ struct LibraryView: View {
                 if app.library.isEmpty {
                     emptyState
                 } else {
+                    if let current { ContinueCard(item: current) { app.open(current.url) } }
+                    let shelf = shelf
+                    if shelf.isEmpty {
+                        Text("Nothing in your library matches “\(query)”.")
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 60)
+                    }
                     LazyVGrid(columns: columns, alignment: .leading, spacing: 36) {
-                        ForEach(app.library) { item in
-                            BookCard(item: item)
-                                .onTapGesture { app.open(item.url) }
-                                .contextMenu {
-                                    Button("Open") { app.open(item.url) }
-                                    #if os(macOS)
-                                    Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([item.url]) }
-                                    #endif
-                                    Divider()
-                                    Button("Remove from Library", role: .destructive) {
-                                        // A managed book is deleted on every device, so that one asks first.
-                                        if CloudStore.filesDir != nil { removing = item } else { app.remove(item) }
+                        ForEach(shelf) { item in
+                            Button { app.open(item.url) } label: { BookCard(item: item) }
+                                .buttonStyle(PressableCardStyle())
+                                .accessibilityElement(children: .ignore)
+                                .accessibilityLabel(item.author.isEmpty ? item.title : "\(item.title), \(item.author)")
+                                .accessibilityValue(item.progress >= 0.995 ? "Finished" : "\(Int(item.progress * 100)) percent read")
+                                .accessibilityAddTraits(.isButton)
+                                .contextMenu { actions(for: item) }
+                                #if os(iOS)
+                                // A long press isn't discoverable, so the same actions sit on the cover.
+                                .overlay(alignment: .topTrailing) {
+                                    Menu { actions(for: item) } label: {
+                                        Image(systemName: "ellipsis")
+                                            .font(.scaled(size: 13, weight: .semibold))
+                                            .frame(width: 30, height: 30)
+                                            .background(.regularMaterial, in: Circle())
+                                            .padding(6)
                                     }
+                                    .foregroundStyle(.primary)
+                                    .accessibilityLabel("Actions for \(item.title)")
                                 }
+                                #endif
                         }
                     }
                 }
@@ -109,8 +165,8 @@ struct LibraryView: View {
         .overlay {
             if dropTargeted {
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 2.5, dash: [8, 6]))
-                    .background(RoundedRectangle(cornerRadius: 18).fill(Color.accentColor.opacity(0.06)))
+                    .strokeBorder(Color.folioAccent, style: StrokeStyle(lineWidth: 2.5, dash: [8, 6]))
+                    .background(RoundedRectangle(cornerRadius: 18).fill(Color.folioAccent.opacity(0.06)))
                     .padding(14)
                     .allowsHitTesting(false)
             }
@@ -131,13 +187,51 @@ struct LibraryView: View {
         }
     }
 
+    private var searchField: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+            TextField("Search", text: $query)
+                .textFieldStyle(.plain)
+                .autocorrectionDisabled()
+            if !query.isEmpty {
+                Button { query = "" } label: { Image(systemName: "xmark.circle.fill") }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.tertiary)
+                    .accessibilityLabel("Clear search")
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .frame(width: 190)
+        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(.quaternary.opacity(0.6)))
+    }
+
+    @ViewBuilder private func actions(for item: LibraryItem) -> some View {
+        Button("Open") { app.open(item.url) }
+        #if os(macOS)
+        Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([item.url]) }
+        #endif
+        Divider()
+        Button("Remove from Library", role: .destructive) {
+            // A managed book is deleted on every device, so that one asks first. Otherwise the file
+            // stays where it is and the removal can simply be undone.
+            if CloudStore.filesDir != nil {
+                removing = item
+            } else {
+                let index = app.library.firstIndex { $0.id == item.id } ?? 0
+                app.remove(item)
+                app.offerUndo("Removed “\(item.title)”") { app.restore(item, at: index) }
+            }
+        }
+    }
+
     private var emptyState: some View {
         VStack(spacing: 16) {
             Image(systemName: "books.vertical")
-                .font(.system(size: 54, weight: .light))
+                .font(.scaled(size: 54, weight: .light))
                 .foregroundStyle(.tertiary)
             Text("Drop an EPUB or PDF here")
-                .font(.system(size: 20, weight: .medium, design: .serif))
+                .font(.scaled(size: 20, weight: .medium, design: .serif))
             Text("Add books or YouTube videos. Claude maps the ideas, quizzes you, and brings back what you're about to forget.")
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
@@ -148,6 +242,59 @@ struct LibraryView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 90)
+    }
+}
+
+/// Gives a card the pressed look a plain tap gesture never shows.
+private struct PressableCardStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .opacity(configuration.isPressed ? 0.85 : 1)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+    }
+}
+
+/// The book being read, one click from where it was left.
+private struct ContinueCard: View {
+    let item: LibraryItem
+    let open: () -> Void
+
+    var body: some View {
+        Button(action: open) {
+            HStack(spacing: 16) {
+                Color.clear
+                    .frame(width: 46, height: 69)
+                    .overlay { BookCover(item: item) }
+                    .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
+                    .shadow(color: .black.opacity(0.16), radius: 5, y: 3)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("CONTINUE READING")
+                        .font(.scaled(size: 10.5, weight: .semibold)).tracking(0.8).foregroundStyle(.secondary)
+                    Text(item.title).font(.scaled(size: 17, weight: .semibold, design: .serif)).lineLimit(1)
+                    HStack(spacing: 8) {
+                        if !item.author.isEmpty { Text(item.author).lineLimit(1) }
+                        Text("\(Int(item.progress * 100))% read").monospacedDigit()
+                    }
+                    .font(.scaled(size: 12)).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 12)
+                Label("Resume", systemImage: "play.fill")
+                    .font(.scaled(size: 13, weight: .semibold))
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .foregroundStyle(.white)
+                    .background(Color.folioAccent, in: Capsule())
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(.quaternary.opacity(0.5)))
+            .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+        .buttonStyle(PressableCardStyle())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Continue reading \(item.title), \(Int(item.progress * 100)) percent read")
+        .accessibilityAddTraits(.isButton)
     }
 }
 
@@ -169,22 +316,23 @@ private struct BookCard: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(item.title)
-                    .font(.system(size: 13, weight: .semibold, design: .serif))
+                    .font(.scaled(size: 13, weight: .semibold, design: .serif))
                     .lineLimit(2)
+                    .multilineTextAlignment(.leading)
                 if !item.author.isEmpty {
-                    Text(item.author).font(.system(size: 11.5)).foregroundStyle(.secondary).lineLimit(1)
+                    Text(item.author).font(.scaled(size: 11.5)).foregroundStyle(.secondary).lineLimit(1)
                 }
                 HStack(spacing: 6) {
                     GeometryReader { g in
                         ZStack(alignment: .leading) {
                             Capsule().fill(.quaternary)
-                            Capsule().fill(Color.accentColor.opacity(0.8)).frame(width: max(2, g.size.width * item.progress))
+                            Capsule().fill(Color.folioAccent.opacity(0.8)).frame(width: max(2, g.size.width * item.progress))
                         }
                     }
                     .frame(height: 3)
                     Text(item.progress >= 0.995 ? "Done" : "\(Int(item.progress * 100))%")
-                        .font(.system(size: 10, weight: .medium)).monospacedDigit()
-                        .foregroundStyle(.tertiary)
+                        .font(.scaled(size: 10, weight: .medium)).monospacedDigit()
+                        .foregroundStyle(.secondary)
                 }
                 .padding(.top, 3)
             }
@@ -212,12 +360,12 @@ struct BookCover: View {
                            startPoint: .topLeading, endPoint: .bottomTrailing)
             VStack(spacing: 10) {
                 Text(item.title)
-                    .font(.system(size: 15, weight: .semibold, design: .serif))
+                    .font(.scaled(size: 15, weight: .semibold, design: .serif))
                     .multilineTextAlignment(.center)
                     .lineLimit(5)
                 Rectangle().fill(.white.opacity(0.5)).frame(width: 24, height: 1)
                 Text(item.author)
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.scaled(size: 10, weight: .medium))
                     .textCase(.uppercase)
                     .tracking(1)
                     .lineLimit(2)

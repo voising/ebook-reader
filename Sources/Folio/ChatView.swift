@@ -64,15 +64,15 @@ struct ChatView: View {
     private var header: some View {
         HStack(spacing: 10) {
             Image(systemName: chat.mode.icon)
-                .font(.system(size: 12, weight: .semibold))
+                .font(.scaled(size: 12, weight: .semibold))
                 .foregroundStyle(.white)
                 .frame(width: 24, height: 24)
                 .background(Circle().fill(LinearGradient(colors: [Color(red: 0.85, green: 0.47, blue: 0.34), Color(red: 0.75, green: 0.36, blue: 0.27)],
                                                          startPoint: .topLeading, endPoint: .bottomTrailing)))
             VStack(alignment: .leading, spacing: 1) {
-                Text(chrome.title).font(.system(size: 13, weight: .semibold))
+                Text(chrome.title).font(.scaled(size: 13, weight: .semibold))
                 Text(chrome.subtitle)
-                    .font(.system(size: 11))
+                    .font(.scaled(size: 11))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
@@ -85,7 +85,7 @@ struct ChatView: View {
                 }
                 .pickerStyle(.inline)
             } label: {
-                Text(chat.mode.label).font(.system(size: 11.5, weight: .medium))
+                Text(chat.mode.label).font(.scaled(size: 11.5, weight: .medium))
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
@@ -94,6 +94,7 @@ struct ChatView: View {
                 Button { chat.reset() } label: { Image(systemName: "square.and.pencil") }
                     .buttonStyle(.borderless)
                     .help("New conversation")
+                    .accessibilityLabel("New conversation")
             }
         }
         .padding(.horizontal, 16)
@@ -103,23 +104,23 @@ struct ChatView: View {
     private var emptyState: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text(chrome.emptyTitle)
-                .font(.system(size: 20, weight: .semibold, design: .serif))
+                .font(.scaled(size: 20, weight: .semibold, design: .serif))
                 .fixedSize(horizontal: false, vertical: true)
             Text(.init(chrome.emptyDetail))
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             Text("**\(chat.mode.label):** \(chat.mode.blurb)")
-                .font(.system(size: 11.5))
+                .font(.scaled(size: 11.5))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(suggestions, id: \.self) { s in
                     Button { chat.send(s) } label: {
                         HStack {
-                            Text(s).font(.system(size: 12.5)).multilineTextAlignment(.leading)
+                            Text(s).font(.scaled(size: 12.5)).multilineTextAlignment(.leading)
                             Spacer()
-                            Image(systemName: "arrow.up.right").font(.system(size: 10, weight: .semibold)).foregroundStyle(.tertiary)
+                            Image(systemName: "arrow.up.right").font(.scaled(size: 10, weight: .semibold)).foregroundStyle(.tertiary)
                         }
                         .padding(.horizontal, 12)
                         .padding(.vertical, 9)
@@ -138,15 +139,16 @@ struct ChatView: View {
         VStack(alignment: .leading, spacing: 8) {
             if let quote = chat.quote {
                 HStack(alignment: .top, spacing: 8) {
-                    RoundedRectangle(cornerRadius: 1.5).fill(Color.accentColor).frame(width: 3)
+                    RoundedRectangle(cornerRadius: 1.5).fill(Color.folioAccent).frame(width: 3)
                     Text(quote)
-                        .font(.system(size: 12, design: .serif))
+                        .font(.scaled(size: 12, design: .serif))
                         .italic()
                         .foregroundStyle(.secondary)
                         .lineLimit(3)
                     Spacer(minLength: 0)
                     Button { chat.quote = nil } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary) }
                         .buttonStyle(.plain)
+                        .accessibilityLabel("Remove quoted passage")
                 }
                 .fixedSize(horizontal: false, vertical: true)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -155,25 +157,27 @@ struct ChatView: View {
                 TextField(chat.quote == nil ? chrome.placeholder : "Ask about this passage…",
                           text: $chat.draft, axis: .vertical)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 13))
+                    .font(.scaled(size: 13))
                     .lineLimit(1...8)
                     .focused($inputFocused)
                     .onSubmit { chat.send() }
                     .padding(.vertical, 4)
                 if chat.isRunning {
                     Button { chat.stop() } label: {
-                        Image(systemName: "stop.circle.fill").font(.system(size: 22))
+                        Image(systemName: "stop.circle.fill").font(.scaled(size: 22))
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(.secondary)
                     .help("Stop")
+                    .accessibilityLabel("Stop")
                 } else {
                     Button { chat.send() } label: {
-                        Image(systemName: "arrow.up.circle.fill").font(.system(size: 22))
+                        Image(systemName: "arrow.up.circle.fill").font(.scaled(size: 22))
                     }
                     .buttonStyle(.plain)
-                    .foregroundStyle(chat.draft.trimmingCharacters(in: .whitespaces).isEmpty ? AnyShapeStyle(.tertiary) : AnyShapeStyle(Color.accentColor))
+                    .foregroundStyle(chat.draft.trimmingCharacters(in: .whitespaces).isEmpty ? AnyShapeStyle(.tertiary) : AnyShapeStyle(Color.folioAccent))
                     .disabled(chat.draft.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .accessibilityLabel("Send")
                     .keyboardShortcut(.return, modifiers: .command)
                 }
             }
@@ -181,7 +185,7 @@ struct ChatView: View {
             .padding(.trailing, 6)
             .padding(.vertical, 6)
             .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(.quaternary.opacity(0.5)))
-            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(inputFocused ? Color.accentColor.opacity(0.5) : .clear, lineWidth: 1))
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(inputFocused ? Color.folioAccent.opacity(0.5) : .clear, lineWidth: 1))
         }
         .padding(12)
         .animation(.easeOut(duration: 0.18), value: chat.quote)
@@ -197,7 +201,7 @@ private struct MessageRow: View {
             HStack(spacing: 8) {
                 line
                 Label(message.text, systemImage: "book.pages")
-                    .font(.system(size: 10.5, weight: .medium))
+                    .font(.scaled(size: 10.5, weight: .medium))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .layoutPriority(1)
@@ -210,18 +214,18 @@ private struct MessageRow: View {
                 VStack(alignment: .trailing, spacing: 6) {
                     if let q = message.quote {
                         Text("“\(q)”")
-                            .font(.system(size: 11.5, design: .serif))
+                            .font(.scaled(size: 11.5, design: .serif))
                             .italic()
                             .foregroundStyle(.secondary)
                             .lineLimit(4)
                             .multilineTextAlignment(.trailing)
                     }
                     Text(message.text)
-                        .font(.system(size: 13))
+                        .font(.scaled(size: 13))
                         .textSelection(.enabled)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
-                        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.accentColor.opacity(0.14)))
+                        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.folioAccent.opacity(0.14)))
                 }
             }
         case .assistant:
@@ -230,7 +234,7 @@ private struct MessageRow: View {
                     TypingIndicator().padding(.vertical, 6)
                 } else if message.isError {
                     Label(message.text, systemImage: "exclamationmark.triangle.fill")
-                        .font(.system(size: 12))
+                        .font(.scaled(size: 12))
                         .foregroundStyle(.red)
                         .textSelection(.enabled)
                 } else {
@@ -255,7 +259,7 @@ private struct TypingIndicator: View {
                     .opacity(phase ? 1 : 0.3)
                     .animation(.easeInOut(duration: 0.6).repeatForever().delay(Double(i) * 0.18), value: phase)
             }
-            Text("Reading…").font(.system(size: 11)).foregroundStyle(.tertiary).padding(.leading, 4)
+            Text("Reading…").font(.scaled(size: 11)).foregroundStyle(.tertiary).padding(.leading, 4)
         }
         .onAppear { phase = true }
     }
@@ -310,7 +314,7 @@ struct MarkdownText: View {
             ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
                 switch block {
                 case .heading(let s, let level):
-                    Text(inline(s)).font(.system(size: level <= 2 ? 15 : 13.5, weight: .semibold)).padding(.top, 4)
+                    Text(inline(s)).font(.scaled(size: level <= 2 ? 15 : 13.5, weight: .semibold)).padding(.top, 4)
                 case .bullet(let marker, let s):
                     HStack(alignment: .firstTextBaseline, spacing: 7) {
                         Text(marker).foregroundStyle(.secondary).frame(minWidth: 10, alignment: .trailing)
@@ -323,7 +327,7 @@ struct MarkdownText: View {
                     }
                     .fixedSize(horizontal: false, vertical: true)
                 case .code(let s):
-                    Text(s).font(.system(size: 11.5, design: .monospaced))
+                    Text(s).font(.scaled(size: 11.5, design: .monospaced))
                         .padding(10)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(RoundedRectangle(cornerRadius: 8).fill(.quaternary.opacity(0.5)))
@@ -332,7 +336,7 @@ struct MarkdownText: View {
                 }
             }
         }
-        .font(.system(size: 13))
+        .font(.scaled(size: 13))
         .lineSpacing(2.5)
         .textSelection(.enabled)
         .fixedSize(horizontal: false, vertical: true)

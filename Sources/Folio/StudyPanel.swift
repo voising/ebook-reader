@@ -12,7 +12,7 @@ struct StudyPanel: View {
             header
             Divider().opacity(0.5)
             Group {
-                switch study.tab ?? .map {
+                switch study.tab ?? .primer {
                 case .primer: PrimerTab(reader: reader, study: study, sectionKey: key)
                 case .map: MapTab(reader: reader, study: study, sectionKey: key)
                 case .explain: ExplainTab(reader: reader, study: study, sectionKey: key)
@@ -26,7 +26,7 @@ struct StudyPanel: View {
 
     private var header: some View {
         HStack(spacing: 12) {
-            Picker("", selection: Binding(get: { study.tab ?? .map }, set: { study.tab = $0 })) {
+            Picker("", selection: Binding(get: { study.tab ?? .primer }, set: { study.tab = $0 })) {
                 ForEach(StudyTab.allCases) { tab in
                     Text(tab.rawValue).tag(tab)
                 }
@@ -35,7 +35,7 @@ struct StudyPanel: View {
             .labelsHidden()
             .fixedSize()
             Text(reader.currentChapterTitle)
-                .font(.system(size: 12))
+                .font(.scaled(size: 12))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
             Spacer()
@@ -66,8 +66,8 @@ private struct GeneratePrompt: View {
 
     var body: some View {
         VStack(spacing: 14) {
-            Image(systemName: icon).font(.system(size: 34, weight: .light)).foregroundStyle(.tertiary)
-            Text(title).font(.system(size: 20, weight: .semibold, design: .serif))
+            Image(systemName: icon).font(.scaled(size: 34, weight: .light)).foregroundStyle(.tertiary)
+            Text(title).font(.scaled(size: 20, weight: .semibold, design: .serif))
             Text(detail)
                 .font(.callout)
                 .foregroundStyle(.secondary)
@@ -97,7 +97,7 @@ private struct ErrorLine: View {
     let text: String
     var body: some View {
         Label(text, systemImage: "exclamationmark.triangle.fill")
-            .font(.system(size: 12))
+            .font(.scaled(size: 12))
             .foregroundStyle(.red)
             .textSelection(.enabled)
             .frame(maxWidth: 460)
@@ -108,7 +108,7 @@ private struct SectionHeading: View {
     let text: String
     var body: some View {
         Text(text.uppercased())
-            .font(.system(size: 10.5, weight: .semibold))
+            .font(.scaled(size: 10.5, weight: .semibold))
             .tracking(0.8)
             .foregroundStyle(.secondary)
     }
@@ -127,7 +127,7 @@ private struct PrimerTab: View {
                 VStack(alignment: .leading, spacing: 22) {
                     if let overview = primer.overview, !overview.isEmpty {
                         Text(overview)
-                            .font(.system(size: 16, design: .serif))
+                            .font(.scaled(size: 16, design: .serif))
                             .lineSpacing(4)
                             .textSelection(.enabled)
                     }
@@ -136,8 +136,8 @@ private struct PrimerTab: View {
                             SectionHeading(text: "Read to answer")
                             ForEach(Array(questions.enumerated()), id: \.offset) { i, q in
                                 HStack(alignment: .firstTextBaseline, spacing: 10) {
-                                    Text("\(i + 1)").font(.system(size: 12, weight: .bold)).foregroundStyle(.secondary).frame(width: 14)
-                                    Text(q).font(.system(size: 14)).textSelection(.enabled)
+                                    Text("\(i + 1)").font(.scaled(size: 12, weight: .bold)).foregroundStyle(.secondary).frame(width: 14)
+                                    Text(q).font(.scaled(size: 14)).textSelection(.enabled)
                                     Spacer(minLength: 8)
                                     Button("Discuss") {
                                         reader.showChat = true
@@ -157,7 +157,7 @@ private struct PrimerTab: View {
                             ForEach(pre, id: \.self) { p in
                                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                                     Text("•").foregroundStyle(.secondary)
-                                    Text(p).font(.system(size: 13)).textSelection(.enabled)
+                                    Text(p).font(.scaled(size: 13)).textSelection(.enabled)
                                 }
                             }
                         }
@@ -167,7 +167,7 @@ private struct PrimerTab: View {
                             SectionHeading(text: "Key terms")
                             ForEach(terms, id: \.self) { t in
                                 (Text(t.term).fontWeight(.semibold) + Text(t.meaning.map { " — \($0)" } ?? ""))
-                                    .font(.system(size: 13))
+                                    .font(.scaled(size: 13))
                                     .textSelection(.enabled)
                             }
                         }
@@ -214,7 +214,7 @@ private struct MapTab: View {
                             ForEach(Self.kinds.filter(present.contains), id: \.self) { kind in
                                 HStack(spacing: 5) {
                                     Circle().fill(Color.conceptKind(kind)).frame(width: 7, height: 7)
-                                    Text(kind.capitalized).font(.system(size: 10.5)).foregroundStyle(.secondary)
+                                    Text(kind.capitalized).font(.scaled(size: 10.5)).foregroundStyle(.secondary)
                                 }
                             }
                         }
@@ -231,7 +231,7 @@ private struct MapTab: View {
             }
         } else {
             GeneratePrompt(icon: "point.3.connected.trianglepath.dotted", title: "See how the ideas connect",
-                           detail: "Claude reads this section and draws its concepts and the relationships between them. Click a concept to see what the text says about it and jump to where it appears.",
+                           detail: "Claude reads this section and draws its concepts and the relationships between them. Select a concept to see what the text says about it and jump to where it appears.",
                            action: "Map This Section", busyLabel: "Mapping the ideas…",
                            isBusy: study.isBusy(.map), error: study.errors[.map],
                            run: { study.generateMap() }, cancel: { study.cancel(.map) })
@@ -249,8 +249,8 @@ private struct MapTab: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
                     Circle().fill(Color.conceptKind(node.kind)).frame(width: 9, height: 9)
-                    Text(node.label).font(.system(size: 15, weight: .semibold, design: .serif))
-                    Text((node.kind ?? "concept").capitalized).font(.system(size: 10.5)).foregroundStyle(.secondary)
+                    Text(node.label).font(.scaled(size: 15, weight: .semibold, design: .serif))
+                    Text((node.kind ?? "concept").capitalized).font(.scaled(size: 10.5)).foregroundStyle(.secondary)
                     Spacer()
                     if let quote = node.quote, !quote.isEmpty {
                         Button("Show in Text") { reader.showPassage(quote) }.controlSize(.small)
@@ -263,11 +263,11 @@ private struct MapTab: View {
                     .disabled(reader.chat.isRunning)
                 }
                 if let summary = node.summary, !summary.isEmpty {
-                    Text(summary).font(.system(size: 13)).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                    Text(summary).font(.scaled(size: 13)).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
                 }
                 if !relations.isEmpty {
                     Text(.init(relations.joined(separator: "  ·  ")))
-                        .font(.system(size: 11.5))
+                        .font(.scaled(size: 11.5))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -276,8 +276,8 @@ private struct MapTab: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         } else {
             HStack {
-                Text("\(map.nodes.count) concepts · click one for details · drag to rearrange · pinch to zoom")
-                    .font(.system(size: 11.5))
+                Text("\(map.nodes.count) concepts · select one for details · drag to rearrange · pinch to zoom")
+                    .font(.scaled(size: 11.5))
                     .foregroundStyle(.secondary)
                 Spacer()
                 if let error = study.errors[.map] { ErrorLine(text: error) }
@@ -321,13 +321,13 @@ private struct ExplainTab: View {
 
     private func editor(hasAttempts: Bool) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Explain it back").font(.system(size: 22, weight: .semibold, design: .serif))
+            Text("Explain it back").font(.scaled(size: 22, weight: .semibold, design: .serif))
             Text("Without looking at the text, write what this section said, as if teaching someone else. Claude checks it against the text and shows you what you got, what you missed and what you got wrong.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             TextEditor(text: $study.explainDraft)
-                .font(.system(size: 14, design: .serif))
+                .font(.scaled(size: 14, design: .serif))
                 .lineSpacing(3)
                 .scrollContentBackground(.hidden)
                 .padding(10)
@@ -356,7 +356,7 @@ private struct ExplainTab: View {
                 ScoreRing(score: a.score)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(a.score >= 85 ? "You've got this section." : a.score >= 60 ? "Solid, with gaps." : "Worth another pass.")
-                        .font(.system(size: 20, weight: .semibold, design: .serif))
+                        .font(.scaled(size: 20, weight: .semibold, design: .serif))
                     HStack(spacing: 6) {
                         Text(a.date.formatted(.relative(presentation: .named)))
                         if let previous {
@@ -366,12 +366,12 @@ private struct ExplainTab: View {
                                 .foregroundStyle(delta > 0 ? .green : (delta < 0 ? .orange : .secondary))
                         }
                     }
-                    .font(.system(size: 11.5))
+                    .font(.scaled(size: 11.5))
                     .foregroundStyle(.secondary)
                 }
             }
             if let feedback = a.feedback, !feedback.isEmpty {
-                Text(feedback).font(.system(size: 14, design: .serif)).lineSpacing(3).textSelection(.enabled)
+                Text(feedback).font(.scaled(size: 14, design: .serif)).lineSpacing(3).textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
             }
             points("Missed", a.missed, icon: "circle.dashed", color: .orange)
@@ -386,8 +386,8 @@ private struct ExplainTab: View {
                 SectionHeading(text: title)
                 ForEach(items, id: \.self) { item in
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Image(systemName: icon).font(.system(size: 11)).foregroundStyle(color)
-                        Text(item).font(.system(size: 13)).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                        Image(systemName: icon).font(.scaled(size: 11)).foregroundStyle(color)
+                        Text(item).font(.scaled(size: 13)).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
                     }
                 }
             }
@@ -400,9 +400,9 @@ private struct ExplainTab: View {
             HStack(alignment: .bottom, spacing: 6) {
                 ForEach(attempts) { a in
                     VStack(spacing: 3) {
-                        Text("\(a.score)").font(.system(size: 9.5, weight: .medium)).foregroundStyle(.secondary)
+                        Text("\(a.score)").font(.scaled(size: 9.5, weight: .medium)).foregroundStyle(.secondary)
                         RoundedRectangle(cornerRadius: 3)
-                            .fill(Color.accentColor.opacity(a.id == attempts.last?.id ? 0.9 : 0.4))
+                            .fill(Color.folioAccent.opacity(a.id == attempts.last?.id ? 0.9 : 0.4))
                             .frame(width: 22, height: max(4, CGFloat(a.score) * 0.5))
                     }
                     .help(a.date.formatted(date: .abbreviated, time: .shortened))
@@ -427,6 +427,8 @@ struct ScoreRing: View {
             Text("\(score)").font(.system(size: size * 0.33, weight: .semibold)).monospacedDigit()
         }
         .frame(width: size, height: size)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Score \(score) out of 100")
     }
 }
 
@@ -454,7 +456,7 @@ private struct CardsTab: View {
                 HStack(spacing: 10) {
                     let due = cards.filter { $0.isDue() }.count
                     Text("\(cards.count) card\(cards.count == 1 ? "" : "s") · \(due) due")
-                        .font(.system(size: 12))
+                        .font(.scaled(size: 12))
                         .foregroundStyle(.secondary)
                     Spacer()
                     if study.isBusy(.cards) {
@@ -472,7 +474,9 @@ private struct CardsTab: View {
                 ScrollView {
                     LazyVStack(spacing: 10) {
                         ForEach(cards) { card in
-                            CardRow(card: card)
+                            CardRow(card: card,
+                                    onShow: card.quote.flatMap { $0.isEmpty ? nil : $0 }.map { quote in { reader.showPassage(quote) } },
+                                    onDelete: { study.deleteCard(card.id) })
                                 .contextMenu {
                                     if let quote = card.quote, !quote.isEmpty {
                                         Button("Show in Text") { reader.showPassage(quote) }
@@ -492,17 +496,30 @@ private struct CardsTab: View {
 
 private struct CardRow: View {
     let card: Flashcard
+    let onShow: (() -> Void)?
+    let onDelete: () -> Void
     @State private var revealed = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline) {
-                Text(card.front).font(.system(size: 13.5, weight: .medium)).fixedSize(horizontal: false, vertical: true)
+                Text(card.front).font(.scaled(size: 13.5, weight: .medium)).fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 12)
-                Text(status).font(.system(size: 10.5)).foregroundStyle(card.isDue() ? Color.accentColor : .secondary)
+                Text(status).font(.scaled(size: 10.5)).foregroundStyle(card.isDue() ? Color.folioAccent : .secondary)
+                Menu {
+                    if let onShow { Button("Show in Text", action: onShow) }
+                    Button("Delete Card", role: .destructive, action: onDelete)
+                } label: {
+                    Image(systemName: "ellipsis").frame(width: 22, height: 18).contentShape(Rectangle())
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .foregroundStyle(.secondary)
+                .accessibilityLabel("Card actions")
             }
             if revealed {
-                Text(card.back).font(.system(size: 13)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Text(card.back).font(.scaled(size: 13)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(14)
@@ -510,6 +527,7 @@ private struct CardRow: View {
         .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(.quaternary.opacity(0.5)))
         .contentShape(Rectangle())
         .onTapGesture { withAnimation(.easeOut(duration: 0.15)) { revealed.toggle() } }
+        .accessibilityHint(revealed ? "Hides the answer" : "Shows the answer")
     }
 
     private var status: String {
@@ -543,9 +561,9 @@ struct ReviewSessionView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 12) {
-                Text(title).font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary).lineLimit(1)
+                Text(title).font(.scaled(size: 12, weight: .medium)).foregroundStyle(.secondary).lineLimit(1)
                 ProgressView(value: Double(done), total: Double(max(total, 1))).frame(maxWidth: 220)
-                Text("\(done)/\(total)").font(.system(size: 11.5)).monospacedDigit().foregroundStyle(.secondary)
+                Text("\(done)/\(total)").font(.scaled(size: 11.5)).monospacedDigit().foregroundStyle(.secondary)
                 Spacer()
                 Button("End") { onDone() }.controlSize(.small)
             }
@@ -565,28 +583,28 @@ struct ReviewSessionView: View {
             Spacer(minLength: 0)
             VStack(alignment: .leading, spacing: 18) {
                 if !item.source.isEmpty {
-                    Text(item.source).font(.system(size: 10.5, weight: .medium)).foregroundStyle(.tertiary).lineLimit(1)
+                    Text(item.source).font(.scaled(size: 10.5, weight: .medium)).foregroundStyle(.tertiary).lineLimit(1)
                 }
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
                     Text(item.card.front)
-                        .font(.system(size: 20, weight: .medium, design: .serif))
+                        .font(.scaled(size: 20, weight: .medium, design: .serif))
                         .lineSpacing(3)
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
                     if item.bookID == WordStore.reviewID {
                         Button { AppModel.shared.words.speak(word: item.card.front) } label: { Image(systemName: "speaker.wave.2.fill") }
-                            .buttonStyle(.plain).foregroundStyle(.secondary).help("Hear it")
+                            .buttonStyle(.plain).foregroundStyle(.secondary).help("Hear it").accessibilityLabel("Hear it")
                     }
                 }
                 if revealed {
                     Divider()
                     Text(item.card.back)
-                        .font(.system(size: 15))
+                        .font(.scaled(size: 15))
                         .lineSpacing(3)
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
                     if let quote = item.card.quote, !quote.isEmpty {
-                        Text("“\(quote)”").font(.system(size: 12, design: .serif)).italic().foregroundStyle(.secondary)
+                        Text("“\(quote)”").font(.scaled(size: 12, design: .serif)).italic().foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -596,15 +614,17 @@ struct ReviewSessionView: View {
             .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color(platform: .textBackgroundColor)))
             .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(.quaternary))
             .shadow(color: .black.opacity(0.07), radius: 14, y: 5)
+            .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .onTapGesture { if !revealed { withAnimation(.easeOut(duration: 0.15)) { revealed = true } } }
 
             if revealed {
                 HStack(spacing: 10) {
                     ForEach(ReviewGrade.allCases) { grade in
                         Button { answer(item, grade) } label: {
                             VStack(spacing: 2) {
-                                Text(grade.label).font(.system(size: 13, weight: .medium))
+                                Text(grade.label).font(.scaled(size: 13, weight: .medium))
                                 Text(Flashcard.intervalLabel(item.card.nextInterval(grade)))
-                                    .font(.system(size: 10.5)).foregroundStyle(.secondary)
+                                    .font(.scaled(size: 10.5)).foregroundStyle(.secondary)
                             }
                             .frame(width: 86)
                             .padding(.vertical, 4)
@@ -613,7 +633,9 @@ struct ReviewSessionView: View {
                     }
                 }
                 .controlSize(.large)
-                Text("Press 1–4").font(.system(size: 10.5)).foregroundStyle(.tertiary)
+                #if os(macOS)
+                Text("Press 1–4").font(.scaled(size: 10.5)).foregroundStyle(.tertiary)
+                #endif
             } else {
                 Button { withAnimation(.easeOut(duration: 0.15)) { revealed = true } } label: {
                     Text("Show Answer").padding(.horizontal, 18)
@@ -621,7 +643,7 @@ struct ReviewSessionView: View {
                 .controlSize(.large)
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.space, modifiers: [])
-                Text("Answer in your head first, then press Space").font(.system(size: 10.5)).foregroundStyle(.tertiary)
+                Text("Answer in your head first, then \(Self.revealHint)").font(.scaled(size: 10.5)).foregroundStyle(.tertiary)
             }
             Spacer(minLength: 0)
         }
@@ -629,10 +651,16 @@ struct ReviewSessionView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    #if os(macOS)
+    private static let revealHint = "press Space"
+    #else
+    private static let revealHint = "tap the card"
+    #endif
+
     private var finished: some View {
         VStack(spacing: 12) {
-            Image(systemName: "checkmark.circle").font(.system(size: 44, weight: .light)).foregroundStyle(.green)
-            Text("Session complete").font(.system(size: 22, weight: .semibold, design: .serif))
+            Image(systemName: "checkmark.circle").font(.scaled(size: 44, weight: .light)).foregroundStyle(.green)
+            Text("Session complete").font(.scaled(size: 22, weight: .semibold, design: .serif))
             Text(again == 0 ? "\(total) card\(total == 1 ? "" : "s"), all recalled."
                  : "\(total) card\(total == 1 ? "" : "s") · \(again) needed another look and will come back soon.")
                 .foregroundStyle(.secondary)
@@ -671,7 +699,7 @@ struct CatchUpPanel: View {
         VStack(spacing: 0) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Catch me up").font(.system(size: 26, weight: .semibold, design: .serif))
+                    Text("Catch me up").font(.scaled(size: 26, weight: .semibold, design: .serif))
                     Text(reader.title).font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
                     if let date = model.context?.lastReadAt {
                         (Text("Last read ") + Text(date, style: .relative) + Text(" ago"))
@@ -698,7 +726,7 @@ struct CatchUpPanel: View {
                     if let highlight = model.context?.lastHighlight {
                         VStack(alignment: .leading, spacing: 8) {
                             SectionHeading(text: "Your last highlight")
-                            Text(highlight.text).font(.system(size: 15, design: .serif)).textSelection(.enabled)
+                            Text(highlight.text).font(.scaled(size: 15, design: .serif)).textSelection(.enabled)
                             if let note = highlight.note, !note.isEmpty {
                                 Text(note).font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
                             }
@@ -742,7 +770,7 @@ struct CatchUpPanel: View {
                         Text("\(index + 1)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                             .padding(.top, 3)
                         VStack(alignment: .leading, spacing: 6) {
-                            Text(idea.text).font(.system(size: 16, design: .serif)).textSelection(.enabled)
+                            Text(idea.text).font(.scaled(size: 16, design: .serif)).textSelection(.enabled)
                             sourceLink(idea.sourceID)
                         }
                     }
@@ -795,7 +823,7 @@ struct CatchUpPanel: View {
                 Label(source.title, systemImage: "arrow.up.right").font(.caption).lineLimit(2)
             }
             .buttonStyle(.plain)
-            .foregroundStyle(Color.accentColor)
+            .foregroundStyle(Color.folioAccent)
             .accessibilityLabel("Read source: \(source.title)")
         }
     }

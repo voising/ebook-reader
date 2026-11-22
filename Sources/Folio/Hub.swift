@@ -76,8 +76,9 @@ final class StudyHub {
         return allCards.filter { $0.card.isDue(now) }.sorted { $0.card.due < $1.card.due }
     }
 
-    func startReview(limit: Int = 40) {
-        let queue = Array(due.prefix(limit))
+    /// Starts a session on what is due, in everything or in one source.
+    func startReview(source: String? = nil, limit: Int = 40) {
+        let queue = Array(due.filter { source == nil || $0.bookID == source }.prefix(limit))
         guard !queue.isEmpty else { return }
         session = queue
     }
@@ -366,7 +367,7 @@ struct ReviewHubView: View {
             VStack(alignment: .leading, spacing: 28) {
                 HStack(alignment: .firstTextBaseline) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Review").font(.system(size: 34, weight: .semibold, design: .serif))
+                        Text("Review").font(.scaled(size: 34, weight: .semibold, design: .serif))
                         Text(all.isEmpty ? "Cards you make while reading come back here when they're due."
                              : due.isEmpty ? "Nothing due. Come back later, or make more cards while you read."
                              : "\(due.count) card\(due.count == 1 ? "" : "s") due across \(Set(due.map(\.bookID)).count) source\(Set(due.map(\.bookID)).count == 1 ? "" : "s").")
@@ -390,10 +391,25 @@ struct ReviewHubView: View {
                 }
 
                 let withCards = hub.books.filter { !($0.cards ?? []).isEmpty || !($0.attempts ?? []).isEmpty }
-                if !withCards.isEmpty {
+                let wordCards = hub.words.reviewItems.map(\.card)
+                if !withCards.isEmpty || !wordCards.isEmpty {
                     VStack(alignment: .leading, spacing: 10) {
                         heading("By source")
-                        ForEach(withCards, id: \.bookID) { book in SourceRow(book: book) }
+                        ForEach(withCards, id: \.bookID) { book in
+                            let scores = (book.attempts ?? []).map(\.score)
+                            let item = app.library.first { $0.id == book.bookID }
+                            SourceRow(title: book.title ?? "Untitled", cards: book.cards ?? [],
+                                      note: scores.isEmpty ? nil : "explain-back avg \(scores.reduce(0, +) / scores.count)",
+                                      openLabel: "Open",
+                                      review: { hub.startReview(source: book.bookID) },
+                                      open: item.map { item in { app.open(item.url) } })
+                        }
+                        // Saved words are reviewed alongside the books' cards, so they are a source too.
+                        if !wordCards.isEmpty {
+                            SourceRow(title: "Saved words", cards: wordCards, note: nil, openLabel: "Word List",
+                                      review: { hub.startReview(source: WordStore.reviewID) },
+                                      open: { app.hubTab = .words })
+                        }
                     }
                 }
 
@@ -405,8 +421,8 @@ struct ReviewHubView: View {
                             HStack(spacing: 12) {
                                 ScoreRing(score: s.score, size: 34)
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(s.title).font(.system(size: 13, weight: .medium)).lineLimit(1)
-                                    Text(s.book).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+                                    Text(s.title).font(.scaled(size: 13, weight: .medium)).lineLimit(1)
+                                    Text(s.book).font(.scaled(size: 11)).foregroundStyle(.secondary).lineLimit(1)
                                 }
                                 Spacer()
                                 if let item = app.library.first(where: { $0.id == s.bookID }) {
@@ -426,12 +442,12 @@ struct ReviewHubView: View {
                         ForEach(weak.prefix(8)) { item in
                             HStack(alignment: .firstTextBaseline, spacing: 12) {
                                 Text("\(item.card.lapses)×")
-                                    .font(.system(size: 12, weight: .semibold)).monospacedDigit()
+                                    .font(.scaled(size: 12, weight: .semibold)).monospacedDigit()
                                     .foregroundStyle(.orange)
                                     .frame(width: 28, alignment: .trailing)
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(item.card.front).font(.system(size: 13)).fixedSize(horizontal: false, vertical: true)
-                                    Text(item.source).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+                                    Text(item.card.front).font(.scaled(size: 13)).fixedSize(horizontal: false, vertical: true)
+                                    Text(item.source).font(.scaled(size: 11)).foregroundStyle(.secondary).lineLimit(1)
                                 }
                                 Spacer()
                                 if let key = item.card.sectionKey, let book = app.library.first(where: { $0.id == item.bookID }) {
@@ -452,7 +468,7 @@ struct ReviewHubView: View {
     }
 
     private func heading(_ text: String) -> some View {
-        Text(text.uppercased()).font(.system(size: 10.5, weight: .semibold)).tracking(0.8).foregroundStyle(.secondary)
+        Text(text.uppercased()).font(.scaled(size: 10.5, weight: .semibold)).tracking(0.8).foregroundStyle(.secondary)
     }
 }
 
@@ -462,8 +478,8 @@ private struct StatTile: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(value).font(.system(size: 28, weight: .semibold, design: .serif)).monospacedDigit()
-            Text(label).font(.system(size: 11.5)).foregroundStyle(.secondary)
+            Text(value).font(.scaled(size: 28, weight: .semibold, design: .serif)).monospacedDigit()
+            Text(label).font(.scaled(size: 11.5)).foregroundStyle(.secondary)
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -471,31 +487,39 @@ private struct StatTile: View {
     }
 }
 
+/// One source of cards on the review dashboard, with the way to review just that source or go to it.
 private struct SourceRow: View {
-    let book: LearnData
+    let title: String
+    let cards: [Flashcard]
+    let note: String?
+    let openLabel: String
+    let review: () -> Void
+    let open: (() -> Void)?
 
     var body: some View {
-        let cards = book.cards ?? []
         let due = cards.filter { $0.isDue() }.count
         let learned = cards.filter { !$0.isNew }.count
         let mature = cards.filter(\.isMature).count
-        let scores = (book.attempts ?? []).map(\.score)
         HStack(spacing: 14) {
             VStack(alignment: .leading, spacing: 3) {
-                Text(book.title ?? "Untitled").font(.system(size: 13, weight: .semibold, design: .serif)).lineLimit(1)
-                Text("\(cards.count) cards · \(due) due · \(mature) mature" + (scores.isEmpty ? "" : " · explain-back avg \(scores.reduce(0, +) / scores.count)"))
-                    .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+                Text(title).font(.scaled(size: 13, weight: .semibold, design: .serif)).lineLimit(1)
+                Text("\(cards.count) card\(cards.count == 1 ? "" : "s") · \(due) due · \(mature) mature" + (note.map { " · \($0)" } ?? ""))
+                    .font(.scaled(size: 11)).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer()
             GeometryReader { g in
                 ZStack(alignment: .leading) {
                     Capsule().fill(.quaternary)
-                    Capsule().fill(Color.accentColor.opacity(0.35)).frame(width: g.size.width * fraction(learned, cards.count))
-                    Capsule().fill(Color.accentColor).frame(width: g.size.width * fraction(mature, cards.count))
+                    Capsule().fill(Color.folioAccent.opacity(0.35)).frame(width: g.size.width * fraction(learned, cards.count))
+                    Capsule().fill(Color.folioAccent).frame(width: g.size.width * fraction(mature, cards.count))
                 }
             }
-            .frame(width: 160, height: 5)
+            .frame(width: 110, height: 5)
             .help("Dark: remembered for three weeks or more. Light: seen at least once.")
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("\(learned) of \(cards.count) cards seen, \(mature) remembered for three weeks or more")
+            if due > 0 { Button("Review \(due)", action: review).controlSize(.small).buttonStyle(.borderedProminent) }
+            if let open { Button(openLabel, action: open).controlSize(.small) }
         }
         .padding(12)
         .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(.quaternary.opacity(0.5)))
@@ -525,7 +549,7 @@ struct AskHubView: View {
                 Divider().opacity(0.5)
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
-                    Text(status).font(.system(size: 11.5)).foregroundStyle(.secondary).lineLimit(1)
+                    Text(status).font(.scaled(size: 11.5)).foregroundStyle(.secondary).lineLimit(1)
                     Spacer()
                 }
                 .padding(.horizontal, 16)
@@ -547,8 +571,8 @@ struct MapHubView: View {
         let map = hub.libraryMap()
         if map.nodes.isEmpty {
             VStack(spacing: 14) {
-                Image(systemName: "point.3.connected.trianglepath.dotted").font(.system(size: 40, weight: .light)).foregroundStyle(.tertiary)
-                Text("Your knowledge map starts in a book").font(.system(size: 20, weight: .semibold, design: .serif))
+                Image(systemName: "point.3.connected.trianglepath.dotted").font(.scaled(size: 40, weight: .light)).foregroundStyle(.tertiary)
+                Text("Your knowledge map starts in a book").font(.scaled(size: 20, weight: .semibold, design: .serif))
                 Text("Open a book, choose Study ▸ Map, and map a section. Every map you make is collected here, and concepts that appear in more than one source are joined.")
                     .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: 440)
             }
@@ -580,13 +604,13 @@ struct MapHubView: View {
             ForEach(Array(items.enumerated()), id: \.offset) { _, item in
                 HStack(spacing: 6) {
                     Circle().fill(item.1).frame(width: 7, height: 7)
-                    Text(item.0).font(.system(size: 10.5)).foregroundStyle(.secondary).lineLimit(1)
+                    Text(item.0).font(.scaled(size: 10.5)).foregroundStyle(.secondary).lineLimit(1)
                 }
             }
             if items.count > 1 {
                 HStack(spacing: 6) {
                     Circle().fill(Color.primary.opacity(0.75)).frame(width: 7, height: 7)
-                    Text("In more than one source").font(.system(size: 10.5)).foregroundStyle(.secondary)
+                    Text("In more than one source").font(.scaled(size: 10.5)).foregroundStyle(.secondary)
                 }
             }
         }
@@ -597,9 +621,9 @@ struct MapHubView: View {
     @ViewBuilder private func detail(_ nodes: [StudyHub.MapNode]) -> some View {
         if let n = nodes.first(where: { $0.node.id == selection }) {
             VStack(alignment: .leading, spacing: 8) {
-                Text(n.node.label).font(.system(size: 15, weight: .semibold, design: .serif))
+                Text(n.node.label).font(.scaled(size: 15, weight: .semibold, design: .serif))
                 if !n.summary.isEmpty {
-                    Text(n.summary).font(.system(size: 13)).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                    Text(n.summary).font(.scaled(size: 13)).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
                 }
                 HStack(spacing: 8) {
                     ForEach(Array(n.sources.prefix(4).enumerated()), id: \.offset) { _, s in
@@ -609,7 +633,7 @@ struct MapHubView: View {
                             }
                             .controlSize(.small)
                         } else {
-                            Text(s.book).font(.system(size: 11)).foregroundStyle(.secondary)
+                            Text(s.book).font(.scaled(size: 11)).foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -619,10 +643,10 @@ struct MapHubView: View {
         } else {
             HStack {
                 Text("\(nodes.count) concepts from \(hub.mappedSourceCount) source\(hub.mappedSourceCount == 1 ? "" : "s") · dashed lines are connections Claude found between sources")
-                    .font(.system(size: 11.5)).foregroundStyle(.secondary)
+                    .font(.scaled(size: 11.5)).foregroundStyle(.secondary)
                 Spacer()
                 if let error = hub.linkError {
-                    Label(error, systemImage: "exclamationmark.triangle.fill").font(.system(size: 11.5)).foregroundStyle(.red)
+                    Label(error, systemImage: "exclamationmark.triangle.fill").font(.scaled(size: 11.5)).foregroundStyle(.red)
                 }
             }
             .padding(12)

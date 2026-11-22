@@ -381,7 +381,7 @@ struct AddLinkSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Add a Link").font(.system(size: 18, weight: .semibold, design: .serif))
+            Text("Add a Link").font(.scaled(size: 18, weight: .semibold, design: .serif))
             Text(Platform.hasClaude
                  ? "Paste a link to an article or a YouTube video. Folio turns the article, or the video's transcript, into something you can read, highlight and study like a book."
                  : "Paste a link to an article. Folio turns it into something you can read and highlight like a book. Videos are added from your Mac.")
@@ -401,7 +401,7 @@ struct AddLinkSheet: View {
             }
             if let error {
                 Label(error, systemImage: "exclamationmark.triangle.fill")
-                    .font(.system(size: 12))
+                    .font(.scaled(size: 12))
                     .foregroundStyle(.red)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)

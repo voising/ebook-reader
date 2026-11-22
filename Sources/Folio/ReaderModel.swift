@@ -97,6 +97,8 @@ final class ReaderModel {
     var anchorToken = 0
     var showChat = Platform.hasClaude
     var sidebarTab: SidebarTab = .contents
+    /// Bumped to bring the sidebar on screen when it is collapsed.
+    var sidebarToken = 0
     var showVideo = true
     var videoSeek = VideoSeek(time: 0, token: 0)
     /// True when the synced record exists but couldn't be read; nothing is written until it can be.
@@ -327,10 +329,30 @@ final class ReaderModel {
     }
 
     func removeHighlight(_ id: String) {
+        guard let removed = record.highlights.first(where: { $0.id == id }) else { return }
         record.highlights.removeAll { $0.id == id }
         js("folio.remove(\(ReaderScripts.jsonString(id)))")
         pdfView?.removeAnnotations(for: id)
         persist()
+        AppModel.shared.offerUndo("Highlight deleted") { [weak self] in self?.restoreHighlight(removed) }
+    }
+
+    private func restoreHighlight(_ h: Highlight) {
+        guard !record.highlights.contains(where: { $0.id == h.id }) else { return }
+        record.highlights.append(h)
+        if kind == .pdf {
+            pdfView?.addAnnotations(for: h)
+        } else if let epub, h.chapterHref == epub.relativeHref(chapterIndex) {
+            // Other chapters draw their highlights when they load.
+            js("folio.apply(\(Self.json(h)))")
+        }
+        persist()
+    }
+
+    /// Opens the sidebar on a tab, revealing it if it is collapsed.
+    func showSidebar(_ tab: SidebarTab) {
+        sidebarTab = tab
+        sidebarToken += 1
     }
 
     // MARK: - Word list
@@ -382,7 +404,7 @@ final class ReaderModel {
         let source = h.chapterTitle ?? h.page.map { "Page \($0 + 1)" }
         let entry = quote + (source.map { "\n— \($0)" } ?? "")
         note = note.isEmpty ? entry + "\n\n" : note.trimmingCharacters(in: .newlines) + "\n\n" + entry + "\n\n"
-        sidebarTab = .notes
+        showSidebar(.notes)
     }
 
     func chapterHighlights(_ index: Int) -> [Highlight] {
