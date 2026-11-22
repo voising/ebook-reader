@@ -1,0 +1,15 @@
+{
+  // The Folio website: a static site served by Cloudflare. Deploy with `npx wrangler deploy` from this folder.
+  "name": "folio",
+  "compatibility_date": "2026-04-27",
+  // Keeps the workers.dev address serving alongside the domain.
+  "workers_dev": true,
+  "routes": [
+    { "pattern": "foliomac.app", "custom_domain": true },
+    { "pattern": "www.foliomac.app", "custom_domain": true }
+  ],
+  "assets": {
+    "directory": "./",
+    "not_found_handling": "404-page"
+  }
+}
